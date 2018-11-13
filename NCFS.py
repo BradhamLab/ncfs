@@ -10,7 +10,57 @@ Author : Dakota Hawkins
 
 import numpy as np
 from scipy import spatial
+from collections import OrderedDict
 
+from numba import jitclass, jit
+from numba import float64
+
+
+def __check_X(X):
+    """Ensure X values are scaled between 0 and 1."""
+    mins = np.min(X)
+    maxes = np.max(X)
+    if mins < 0:
+        raise ValueError('Values in X should be between 0 and 1.')
+    if maxes > 1:
+        raise ValueError('Values in X should be between 0 and 1.')
+
+@jit
+def kernel_distance(x_i, x_j, sigma, w):
+    """
+    Calculate the kernel distance between two samples.
+
+    Calculate the kernel distance between two points:
+    .. math::
+        K(\vec x_i, \vec x_j) = \exp(\dfrac{-\vec w \dot
+                                \abs(\vec x_i - \vec x_j))}{\sigma})
+    
+    Parameters
+    ----------
+    x_i : numpy.ndarray
+        Numpy array of feature values for sample math::`i`
+    x_j : numpy.ndarray
+        Numpy array of feature values for sample math::`j`
+    
+    Returns
+    -------
+    float
+        Kernel distance between samples math::`i` and math::`j`
+    """
+    if len(x_i) != len(x_j):
+        raise ValueError("Sample feature vectors different sizes: " + 
+                         "{} and {}".format(x_i.shape, x_j.shape))
+    if len(x_i) != len(w) or len(x_j) != (x_j):
+        raise ValueError("Weight vector must be the same dimensions as " + 
+                         "feature vectors.")
+
+    abs_diff = np.abs(x_i - x_j)
+    weighted_dist = np.sum(w**2 * abs_diff)
+    return np.exp(-1 * weighted_dist / sigma)
+
+spec = OrderedDict({'alpha': float64, 'sigma': float64, 'reg': float64,
+                    'nu': float64, 'coef_': float64[:], 'objective_': float64})
+@jitclass(spec)
 class NCFS(object): 
 
     def __init__(self, alpha, sigma, reg, nu):
@@ -35,17 +85,7 @@ class NCFS(object):
         self.sigma = sigma
         self.reg = reg
         self.nu = nu 
-        self.coef_ = None
         self.objective_ = np.inf
-
-    @staticmethod
-    def __check_X(X):
-        mins = np.min(X, axis=0)
-        maxes = np.max(X, axis=0)
-        if any(mins < 0):
-            raise ValueError('Values in X should be between 0 and 1.')
-        if any(maxes > 1):
-            raise ValueError('Values in X should be between 0 and 1.')
 
     def fit(self, X, y):
         """
@@ -78,9 +118,9 @@ class NCFS(object):
                              'Got {}.'.format(type(y)))
         if y.shape[0] != X.shape[0]:
             raise ValueError('`X` and `y` must have the same row numbers.')
-        NCFS.__check_X(X)
+        __check_X(X)
         n_samples, n_features = X.shape
-        self.coef_ = np.ones(n_features)
+        self.coef_ = np.ones(n_features, dtype=np.float_)
         p_reference = np.zeros((n_samples, n_samples))
         p_correct = np.zeros(n_samples)
         deltas = np.zeros(n_features)
@@ -99,8 +139,9 @@ class NCFS(object):
                     if i == j:
                         p_reference[i, j] = 0
                     else:
-                        p_reference[i, j] = self.kernel_distance(X[i, :],
-                                                                 X[j, :])
+                        p_reference[i, j] = kernel_distance(X[i, :], X[j, :],
+                                                            self.sigma,
+                                                            self.coef_)
             # scale p_reference by row sums 
             scale_factors = 1 / p_reference.sum(axis = 1)
             p_reference = p_reference * scale_factors
@@ -132,11 +173,6 @@ class NCFS(object):
             else:
                 self.alpha *= 0.4
 
-    def kernel_distance(self, x_i, x_j):
-        abs_diff = np.abs(x_i - x_j)
-        weighted_dist = np.sum(self.coef_**2 * abs_diff)
-        return np.exp(-1 * weighted_dist / self.sigma)
-
 def toy_dataset():
     class_1 = np.zeros((100, 2))
     class_2 = np.zeros((100, 2))
@@ -162,5 +198,5 @@ def toy_dataset():
 
 if __name__ == '__main__':
     X, y = toy_dataset()
-    f_select = NCFS(alpha=0.01, sigma=1, reg=1, nu=0.01)
+    f_select = NCFS(alpha=0.01, sigma=1, reg=1, nu=0.001)
     f_select.fit(X, y)
