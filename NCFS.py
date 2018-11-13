@@ -133,6 +133,26 @@ class NCFS(object):
                 self.alpha *= 0.4
 
     def kernel_distance(self, x_i, x_j):
+        """
+        Calculate the kernel distance between two samples.
+
+        Calculate the kernel distance between two points:
+        .. math::
+            K(\vec x_i, \vec x_j) = \exp(\dfrac{-\vec w \dot
+                                    \abs(\vec x_i - \vec x_j))}{\sigma})
+        
+        Parameters
+        ----------
+        x_i : numpy.ndarray
+            Numpy array of feature values for sample math::`i`
+        x_j : numpy.ndarray
+            Numpy array of feature values for sample math::`j`
+        
+        Returns
+        -------
+        float
+            Kernel distance between samples math::`i` and math::`j`
+        """
         abs_diff = np.abs(x_i - x_j)
         weighted_dist = np.sum(self.coef_**2 * abs_diff)
         return np.exp(-1 * weighted_dist / self.sigma)
