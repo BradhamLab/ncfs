@@ -13,21 +13,22 @@ from scipy import spatial
 
 class NCFS(object): 
 
-    def __init__(self, alpha, sigma, reg, nu):
+    def __init__(self, alpha=0.1, sigma=1, reg=1, nu=0.001):
         """
         Class to perform Neighborhood Component Feature Selection 
 
         Parameters
         ----------
-        alpha : float
+        alpha : float, optional
             Initial step length for gradient ascent. Should be between 0 and 1.
-        sigma : float
-            Kernel width.
-        reg : float
-            Regularization constant. Lambda in the original paper.
-        nu : float
+            Default is 0.1.
+        sigma : float, optional
+            Kernel width. Default is 1.
+        reg : float, optional
+            Regularization constant. Lambda in the original paper. Default is 1.
+        nu : float, optional
             Stopping criteria for iteration. Threshold for difference between
-            objective function scores after each iteration. 
+            objective function scores after each iteration. Default is 0.001.
         """
         if not 0 < alpha < 1:
             raise ValueError("Alpha value should be between 0 and 1.")
@@ -46,6 +47,7 @@ class NCFS(object):
             raise ValueError('Values in X should be between 0 and 1.')
         if any(maxes > 1):
             raise ValueError('Values in X should be between 0 and 1.')
+        return X.astype(np.float64)
 
     def fit(self, X, y):
         """
@@ -78,31 +80,32 @@ class NCFS(object):
                              'Got {}.'.format(type(y)))
         if y.shape[0] != X.shape[0]:
             raise ValueError('`X` and `y` must have the same row numbers.')
-        NCFS.__check_X(X)
+        X= NCFS.__check_X(X)
         n_samples, n_features = X.shape
-        self.coef_ = np.ones(n_features)
-        p_reference = np.zeros((n_samples, n_samples))
-        p_correct = np.zeros(n_samples)
-        deltas = np.zeros(n_features)
+        self.coef_ = np.ones(n_features, dtype=np.float64)
+        deltas = np.zeros(n_features, dtype=np.float64)
         # construct adjacency matrix of class membership for matrix mult. 
-        class_mat = np.zeros((n_samples, n_samples))
+        class_mat = np.zeros((n_samples, n_samples), np.float64)
         for i in range(n_samples):
             for j in range(n_samples):
                 if y[i] == y[j]:
                     class_mat[i, j] = 1
 
         current_objective = 0
+        diag_idx = np.diag_indices(n_samples, 2)
         while abs(self.objective_ - current_objective) > self.nu:
-            # calculate K(D_w(xi, xj)) for all i, j pairs
-            for i in range(n_samples):
-                for j in range(n_samples):
-                    if i == j:
-                        p_reference[i, j] = 0
-                    else:
-                        p_reference[i, j] = self.kernel_distance(X[i, :],
-                                                                 X[j, :])
-            # scale p_reference by row sums 
-            scale_factors = 1 / p_reference.sum(axis = 1)
+            # calculate D_w(x_i, x_j): w^2 * |x_i - x_j] for all i,j
+            distances = spatial.distance.pdist(X, metric='cityblock',
+                                               w=self.coef_**2)
+            # organize as distance matrix
+            distances = spatial.distance.squareform(distances)
+            # calculate K(D_w(x_i, x_j)) for all i, j pairs
+            p_reference = np.exp(-1 * distances / self.sigma, dtype=np.float64)
+            # set p_reference[i, i] to zero
+            p_reference[diag_idx] = 0
+
+            # add pseudocount because necessary.
+            scale_factors = 1 / (p_reference.sum(axis = 1) + 10**(-6))
             p_reference = p_reference * scale_factors
 
             # calculate probability of correct classification
@@ -132,30 +135,6 @@ class NCFS(object):
             else:
                 self.alpha *= 0.4
 
-    def kernel_distance(self, x_i, x_j):
-        """
-        Calculate the kernel distance between two samples.
-
-        Calculate the kernel distance between two points:
-        .. math::
-            K(\vec x_i, \vec x_j) = \exp(\dfrac{-\vec w \dot
-                                    \abs(\vec x_i - \vec x_j))}{\sigma})
-        
-        Parameters
-        ----------
-        x_i : numpy.ndarray
-            Numpy array of feature values for sample math::`i`
-        x_j : numpy.ndarray
-            Numpy array of feature values for sample math::`j`
-        
-        Returns
-        -------
-        float
-            Kernel distance between samples math::`i` and math::`j`
-        """
-        abs_diff = np.abs(x_i - x_j)
-        weighted_dist = np.sum(self.coef_**2 * abs_diff)
-        return np.exp(-1 * weighted_dist / self.sigma)
 
 def toy_dataset():
     class_1 = np.zeros((100, 2))
@@ -182,5 +161,5 @@ def toy_dataset():
 
 if __name__ == '__main__':
     X, y = toy_dataset()
-    f_select = NCFS(alpha=0.01, sigma=1, reg=1, nu=0.01)
+    f_select = NCFS(alpha=0.01, sigma=1, reg=1, nu=0.001)
     f_select.fit(X, y)
