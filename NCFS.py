@@ -29,6 +29,13 @@ class NCFS(object):
         nu : float, optional
             Stopping criteria for iteration. Threshold for difference between
             objective function scores after each iteration. Default is 0.001.
+
+        References
+        ----------
+
+        Yang, W., Wang, K., & Zuo, W. (2012). Neighborhood Component Feature
+        Selection for High-Dimensional Data. Journal of Computers, 7(1).
+        https://doi.org/10.4304/jcp.7.1.161-168
         """
         if not 0 < alpha < 1:
             raise ValueError("Alpha value should be between 0 and 1.")
@@ -49,7 +56,7 @@ class NCFS(object):
             raise ValueError('Values in X should be between 0 and 1.')
         return X.astype(np.float64)
 
-    def fit(self, X, y):
+    def fit(self, X, y, metric='cityblock'):
         """
         Fit feature weights using Neighborhood Component Feature Selection.
 
@@ -64,6 +71,10 @@ class NCFS(object):
             number of features.
         y : numpy.array
             List of pre-defined classes for each sample in `X`.
+        metric : str, optional
+            Metric to calculate distances between samples. Must be a scipy
+            implemented distance and accept a parameter 'w' for a weighted
+            distance. Default is 'cityblock', as used in the original paper.
 
         Returns
         -------
@@ -95,8 +106,8 @@ class NCFS(object):
         diag_idx = np.diag_indices(n_samples, 2)
         while abs(self.objective_ - current_objective) > self.nu:
             # calculate D_w(x_i, x_j): w^2 * |x_i - x_j] for all i,j
-            distances = spatial.distance.pdist(X, metric='cityblock',
-                                               w=self.coef_**2)
+            distances = spatial.distance.pdist(X, metric=metric,
+                                               w=np.power(self.coef_, 2))
             # organize as distance matrix
             distances = spatial.distance.squareform(distances)
             # calculate K(D_w(x_i, x_j)) for all i, j pairs
@@ -104,32 +115,42 @@ class NCFS(object):
             # set p_reference[i, i] to zero
             p_reference[diag_idx] = 0
 
-            # add pseudocount because necessary.
-            scale_factors = 1 / (p_reference.sum(axis = 1) + 10**(-6))
+            # add pseudocount if necessary to avoid dividing by zero
+            p_i = p_reference.sum(axis=0)
+            if any(p_i == 0):
+                pseudocount = np.min(p_i)
+                if pseudocount == 0:
+                    pseudocount = np.exp(-745) # smallest number possible
+                p_i += pseudocount
+            scale_factors = 1 / (p_i)
             p_reference = p_reference * scale_factors
 
             # calculate probability of correct classification
-            p_correct = np.sum(p_reference * class_mat, axis=1)
+            p_correct = np.sum(p_reference * class_mat, axis=0)
 
             # caclulate weight adjustments
             for l in range(n_features):
+                # values for feature l starting with sample 0 to N
                 feature_vec = X[:, l].reshape(-1, 1)
-                # weighted sample distances
-                d_mat = spatial.distance_matrix(feature_vec, feature_vec)
-                d_mat = np.abs(d_mat) * p_reference
-                # weighted in-class distances
-                in_class = d_mat*class_mat
-                sample_terms = np.sum(p_correct * d_mat, axis=1) \
-                             - np.sum(in_class, axis=1)
+                # distance in feature l for all samples, d_ij
+                d_mat = spatial.distance.pdist(feature_vec, metric=metric)
+                d_mat = spatial.distance.squareform(d_mat)
+                # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
+                d_mat *= p_reference
+                # calculate p_i * sum(D_ij), j from 0 to N
+                all_term = p_correct * d_mat.sum(axis=0)
+                # weighted in-class distances using adjacency matrix,
+                in_class_term = np.sum(d_mat*class_mat, axis=0)
+                sample_terms = all_term - in_class_term
                 # calculate delta following gradient ascent 
-                deltas[l] = 2 * ((1 / self.sigma) * sample_terms.sum() \
-                          - self.reg) * self.coef_[l]
+                deltas[l] = 2 * self.coef_[l] \
+                          * ((1 / self.sigma) * sample_terms.sum() - self.reg)
                 
             # update weights and other parameters
-            self.coef_ += self.alpha * deltas
             self.objective_ = current_objective
             current_objective = np.sum(p_reference * class_mat) \
                               - self.reg * np.dot(self.coef_, self.coef_)
+            self.coef_ = self.coef_ + self.alpha * deltas
             if current_objective > self.objective_:
                 self.alpha *= 1.01
             else:
@@ -151,7 +172,7 @@ def toy_dataset():
         else:
             class_2[i, :] = np.random.multivariate_normal([-3, 3], cov)
     class_data = np.vstack((class_1, class_2))
-    bad_features = np.random.normal(loc=0, scale=np.sqrt(20), size=(200, 1000))
+    bad_features = np.random.normal(loc=0, scale=np.sqrt(20), size=(200, 998))
     data = np.hstack((class_data[:, 0].reshape(-1, 1), bad_features[:, :99],
                       class_data[:, 1].reshape(-1, 1), bad_features[:, 99:]))
     classes = np.array([0]*100 + [1]*100)
