@@ -1,7 +1,7 @@
 # Neigbhorhood Component Feature Selection
 
 This is a Python implementation of Neighborhood Component Feature Selection,
-originally introduced in [Yang et al. 2012](https://pdfs.semanticscholar.org/62ea/56278993e959bea8edf5e296f70b471359e5.pdf).
+originally introduced in [Yang et al. 2012](http://www.jcomputers.us/vol7/jcp0701-19.pdf).
 NCFS is an embedded feature selection method that learns feature weights by
 maximizing prediction accuracy in a leave-one-out KNN classifier.
 
@@ -13,7 +13,7 @@ the repository is the best way to install the package. The package relies on
 
 ## Example
 
-```{python}
+```python
 from NCFS import NCFS
 
 X, y = NCFS.toy_dataset()
@@ -25,7 +25,8 @@ print(sum(feature_select.coef_ > 1))
 ## Tests
 
 Unit tests are currently under development, but results comparing to the
-original paper are listed below.
+original paper are listed below. To generate plots yourself, run
+`python tests/generate_results.py`
 
 ## Comparison with Original Results
 
@@ -44,8 +45,8 @@ implementation of the aglorithm.
 ![Equations](https://github.com/dakota-hawkins/NCFS/images/distance.png)
 
 NCFS uses the kernal function `(2)` when calculating probabilities. However, with
-a large number of features, the value `z` (canonically a distance value from
-`(1)`) can easily approach a large enough value such that the negative
+a large number of features, the value `z` -- canonically a distance value from
+`(1)` -- can easily approach a large enough value such that the negative
 exponent rounds to zero. This leads to division by zero issues, and fitting
 fails. To get around this, small pseudocounts are added to distances when a
 division by zero would otherwise occur. To keep distances small, features should
