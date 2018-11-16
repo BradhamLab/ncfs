@@ -13,7 +13,7 @@ from scipy import spatial
 
 class NCFS(object): 
 
-    def __init__(self, alpha=0.1, sigma=1, reg=1, nu=0.001):
+    def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001):
         """
         Class to perform Neighborhood Component Feature Selection 
 
@@ -26,7 +26,7 @@ class NCFS(object):
             Kernel width. Default is 1.
         reg : float, optional
             Regularization constant. Lambda in the original paper. Default is 1.
-        nu : float, optional
+        eta : float, optional
             Stopping criteria for iteration. Threshold for difference between
             objective function scores after each iteration. Default is 0.001.
 
@@ -38,7 +38,7 @@ class NCFS(object):
             Kernel width.
         reg : float
             Regularization constant. Lambda in the original paper.
-        nu : float
+        eta : float
             Stopping criteria for iteration. Threshold for difference between
             objective function scores after each iteration.
         coef_ : numpy.array
@@ -64,7 +64,7 @@ class NCFS(object):
         self.alpha = alpha
         self.sigma = sigma
         self.reg = reg
-        self.nu = nu 
+        self.eta = eta 
         self.coef_ = None
         self.loss = None
 
@@ -126,7 +126,7 @@ class NCFS(object):
 
         past_objective, loss = 0, np.inf
         diag_idx = np.diag_indices(n_samples, 2)
-        while abs(loss) > self.nu:
+        while abs(loss) > self.eta:
             # calculate D_w(x_i, x_j): w^2 * |x_i - x_j] for all i,j
             distances = spatial.distance.pdist(X, metric=metric,
                                                w=np.power(self.coef_, 2))
@@ -139,12 +139,14 @@ class NCFS(object):
 
             # add pseudocount if necessary to avoid dividing by zero
             p_i = p_reference.sum(axis=0)
-            if any(p_i == 0):
-                print('Adding pseudocounts to distance matrix.')
-                pseudocount = np.min(p_i)
-                if pseudocount == 0:
-                    print('All zeros, adding exp(-20) as pseudocount.')
+            n_zeros = sum(p_i == 0)
+            if n_zeros > 0:
+                print('Adding pseudocounts to distance matrix to avoid ' +
+                      'dividing by zero.')
+                if n_zeros == len(p_i):
                     pseudocount = np.exp(-20)
+                else:
+                    pseudocount = np.min(p_i)
                 p_i += pseudocount
             scale_factors = 1 / (p_i)
             p_reference = p_reference * scale_factors
@@ -240,5 +242,5 @@ def toy_dataset(n_features=1000):
 
 if __name__ == '__main__':
     X, y = toy_dataset()
-    f_select = NCFS(alpha=0.01, sigma=1, reg=1, nu=0.001)
+    f_select = NCFS(alpha=0.01, sigma=1, reg=1, eta=0.001)
     f_select.fit(X, y)
