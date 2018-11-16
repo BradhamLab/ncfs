@@ -41,7 +41,7 @@ did not link to the code used, and I've been unable to find a public
 implementation of the aglorithm.
 
 ### Numerical stability
-<img src="https://github.com/dakota-hawkins/NCFS/tree/master/images/distance.png">
+![Formulas](/images/distance.png)
 
 NCFS uses the kernal function `(2)` when calculating probabilities. However, with
 a large number of features, the value `z` -- canonically a distance value from
@@ -54,19 +54,19 @@ distance is recommended.
 
 ### Selected Features
 Figure 1, Yang et al. 2012
-<img src="https://github.com/dakota-hawkins/NCFS/tree/master/images/Figure1.png">
+![Figure1](/images/Figure1.png)
 
 Figure 1 Comparison
-<img src="https://github.com/dakota-hawkins/NCFS/tree/master/images/figure1_comp.png">
+![Comparison1](/images/figure1_comp.png)
 
 Figure 2, Yang et al. 2012
-<img src="https://github.com/dakota-hawkins/NCFS/tree/master/images/Figure2.png">
+![Figure2](/images/Figure2.png)
 
 Figure 2 Comparison
-<img src="https://github.com/dakota-hawkins/NCFS/tree/master/images/figure2_comp.png">
+![Comparison2](/images/figure2_comp.png)
 
 Figure 3, Yang et al. 2012
-<img src="https://github.com/dakota-hawkins/NCFS/tree/master/images/Figure3.png">
+![Figure3](/images/Figure3.png)
 
 Figure 3 Comparison
-<img src="https://github.com/dakota-hawkins/NCFS/tree/master/images/figure3_comp.png">
+![Comparison3](/images/figure3_comp.png)
