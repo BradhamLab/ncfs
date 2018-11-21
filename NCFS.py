@@ -230,6 +230,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         if X.shape[1] != len(self.coef_):
             raise ValueError('Expected data matrix `X` to contain the same' + 
                              'number of features as learnt feature weights.')
+        NCFS.__check_X(X)
         return X*self.coef_
 
 
