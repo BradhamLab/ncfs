@@ -59,6 +59,10 @@ class NCFS(object):
         fit : Fit feature weights given a particular data matrix and sample
             labels.
 
+        set_params : [desc]
+
+        get_params : [desc]
+
         References
         ----------
 
@@ -70,7 +74,7 @@ class NCFS(object):
         self.sigma = sigma
         self.reg = reg
         self.eta = eta 
-        self.distance = distance
+        self.metric = metric
         self.coef_ = None
         self.score_ = None
 
@@ -119,8 +123,12 @@ class NCFS(object):
             raise ValueError('`X` and `y` must have the same row numbers.')
         X= NCFS.__check_X(X)
         n_samples, n_features = X.shape
+        # initialize all weights as 1
         self.coef_ = np.ones(n_features, dtype=np.float64)
+        # instantiate feature deltas to zero
         deltas = np.zeros(n_features, dtype=np.float64)
+        # get initial step size
+        step_size = self.alpha 
         # construct adjacency matrix of class membership for matrix mult. 
         class_mat = np.zeros((n_samples, n_samples), np.float64)
         for i in range(n_samples):
@@ -182,14 +190,22 @@ class NCFS(object):
             # calculate loss from previous objective function
             loss = new_objective - past_objective
             # update weights
-            self.coef_ = self.coef_ + self.alpha * deltas
+            self.coef_ = self.coef_ + step_size * deltas
             # reset objective score for new iteration
             past_objective = new_objective
             if loss > 0:
-                self.alpha *= 1.01
+                step_size *= 1.01
             else:
-                self.alpha *= 0.4
+                step_size *= 0.4
         self.score_ = past_objective
+
+    def set_params(self, **params):
+
+        return None
+
+    def get_params(self, **params):
+
+        return None
 
 
 def toy_dataset(n_features=1000):
