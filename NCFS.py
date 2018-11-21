@@ -10,8 +10,9 @@ Author : Dakota Hawkins
 
 import numpy as np
 from scipy import spatial
+from sklearn import base
 
-class NCFS(object): 
+class NCFS(base.BaseEstimator, base.TransformerMixin): 
 
     def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
                  metric='cityblock'):
@@ -59,10 +60,6 @@ class NCFS(object):
         fit : Fit feature weights given a particular data matrix and sample
             labels.
 
-        set_params : [desc]
-
-        get_params : [desc]
-
         References
         ----------
 
@@ -106,7 +103,8 @@ class NCFS(object):
 
         Returns
         -------
-        None
+        Fitted NCFS object with weights stored in the `.coef_` instance
+        variable.
         """
         if not 0 < self.alpha < 1:
             raise ValueError("Alpha value should be between 0 and 1.")
@@ -198,14 +196,41 @@ class NCFS(object):
             else:
                 step_size *= 0.4
         self.score_ = past_objective
+        return self
 
-    def set_params(self, **params):
+    def transform(self, X):
+        """
+        Transform features according to their learned weights.
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            An `(n x p)` data matrix where `n` is the number of samples, and `p`
+            is the number of features. Features number and order should be the
+            same as those used to fit the model.  
+        
+        Raises
+        ------
+        RuntimeError
+            Raised if the NCFS object has not been fit yet.
+        ValueError
+            Raided if the number of feature dimensions does not match the
+            number of learned weights.
+        
+        Returns
+        -------
+        numpy.ndarray
+            Transformed data matrix calculated by multiplying each feature by
+            its learnt weight.
+        """
 
-        return None
-
-    def get_params(self, **params):
-
-        return None
+        if self.coef_ is None:
+            raise RuntimeError('NCFS is not fit. Please fit the ' +
+                               'estimator by calling `.fit()`.')
+        if X.shape[1] != len(self.coef_):
+            raise ValueError('Expected data matrix `X` to contain the same' + 
+                             'number of features as learnt feature weights.')
+        return X*self.coef_
 
 
 def toy_dataset(n_features=1000):
