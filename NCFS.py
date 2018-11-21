@@ -13,7 +13,8 @@ from scipy import spatial
 
 class NCFS(object): 
 
-    def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001):
+    def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
+                 metric='cityblock'):
         """
         Class to perform Neighborhood Component Feature Selection 
 
@@ -29,6 +30,10 @@ class NCFS(object):
         eta : float, optional
             Stopping criteria for iteration. Threshold for difference between
             objective function scores after each iteration. Default is 0.001.
+        metric : str, optional
+            Metric to calculate distances between samples. Must be a scipy
+            implemented distance and accept a parameter 'w' for a weighted
+            distance. Default is 'cityblock', as used in the original paper.
 
         Attributes:
         ----------
@@ -41,6 +46,8 @@ class NCFS(object):
         eta : float
             Stopping criteria for iteration. Threshold for difference between
             objective function scores after each iteration.
+        metric : str
+            Distance metric to use.
         coef_ : numpy.array
             Feature weights. Unimportant features tend toward zero.
         score_ : float
@@ -59,14 +66,13 @@ class NCFS(object):
         Selection for High-Dimensional Data. Journal of Computers, 7(1).
         https://doi.org/10.4304/jcp.7.1.161-168
         """
-        if not 0 < alpha < 1:
-            raise ValueError("Alpha value should be between 0 and 1.")
         self.alpha = alpha
         self.sigma = sigma
         self.reg = reg
         self.eta = eta 
+        self.distance = distance
         self.coef_ = None
-        self.loss = None
+        self.score_ = None
 
     @staticmethod
     def __check_X(X):
@@ -78,7 +84,7 @@ class NCFS(object):
             raise ValueError('Values in X should be between 0 and 1.')
         return X.astype(np.float64)
 
-    def fit(self, X, y, metric='cityblock'):
+    def fit(self, X, y):
         """
         Fit feature weights using Neighborhood Component Feature Selection.
 
@@ -93,15 +99,13 @@ class NCFS(object):
             number of features.
         y : numpy.array
             List of pre-defined classes for each sample in `X`.
-        metric : str, optional
-            Metric to calculate distances between samples. Must be a scipy
-            implemented distance and accept a parameter 'w' for a weighted
-            distance. Default is 'cityblock', as used in the original paper.
 
         Returns
         -------
         None
         """
+        if not 0 < self.alpha < 1:
+            raise ValueError("Alpha value should be between 0 and 1.")
         if not isinstance(X, np.ndarray):
             raise ValueError('`X` must be two-dimensional numpy array. Got ' + 
                              '{}.'.format(type(X)))
@@ -128,7 +132,7 @@ class NCFS(object):
         diag_idx = np.diag_indices(n_samples, 2)
         while abs(loss) > self.eta:
             # calculate D_w(x_i, x_j): w^2 * |x_i - x_j] for all i,j
-            distances = spatial.distance.pdist(X, metric=metric,
+            distances = spatial.distance.pdist(X, metric=self.metric,
                                                w=np.power(self.coef_, 2))
             # organize as distance matrix
             distances = spatial.distance.squareform(distances)
@@ -159,7 +163,7 @@ class NCFS(object):
                 # values for feature l starting with sample 0 to N
                 feature_vec = X[:, l].reshape(-1, 1)
                 # distance in feature l for all samples, d_ij
-                d_mat = spatial.distance.pdist(feature_vec, metric=metric)
+                d_mat = spatial.distance.pdist(feature_vec, metric=self.metric)
                 d_mat = spatial.distance.squareform(d_mat)
                 # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
                 d_mat *= p_reference
