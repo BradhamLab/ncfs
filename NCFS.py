@@ -10,82 +10,80 @@ Author : Dakota Hawkins
 
 import numpy as np
 from scipy import spatial
-from collections import OrderedDict
+from sklearn import base
 
-from numba import jitclass, jit
-from numba import float64
+class NCFS(base.BaseEstimator, base.TransformerMixin): 
 
-
-def __check_X(X):
-    """Ensure X values are scaled between 0 and 1."""
-    mins = np.min(X)
-    maxes = np.max(X)
-    if mins < 0:
-        raise ValueError('Values in X should be between 0 and 1.')
-    if maxes > 1:
-        raise ValueError('Values in X should be between 0 and 1.')
-
-@jit
-def kernel_distance(x_i, x_j, sigma, w):
-    """
-    Calculate the kernel distance between two samples.
-
-    Calculate the kernel distance between two points:
-    .. math::
-        K(\vec x_i, \vec x_j) = \exp(\dfrac{-\vec w \dot
-                                \abs(\vec x_i - \vec x_j))}{\sigma})
-    
-    Parameters
-    ----------
-    x_i : numpy.ndarray
-        Numpy array of feature values for sample math::`i`
-    x_j : numpy.ndarray
-        Numpy array of feature values for sample math::`j`
-    
-    Returns
-    -------
-    float
-        Kernel distance between samples math::`i` and math::`j`
-    """
-    if len(x_i) != len(x_j):
-        raise ValueError("Sample feature vectors different sizes: " + 
-                         "{} and {}".format(x_i.shape, x_j.shape))
-    if len(x_i) != len(w) or len(x_j) != (x_j):
-        raise ValueError("Weight vector must be the same dimensions as " + 
-                         "feature vectors.")
-
-    abs_diff = np.abs(x_i - x_j)
-    weighted_dist = np.sum(w**2 * abs_diff)
-    return np.exp(-1 * weighted_dist / sigma)
-
-spec = OrderedDict({'alpha': float64, 'sigma': float64, 'reg': float64,
-                    'nu': float64, 'coef_': float64[:], 'objective_': float64})
-@jitclass(spec)
-class NCFS(object): 
-
-    def __init__(self, alpha, sigma, reg, nu):
+    def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
+                 metric='cityblock'):
         """
         Class to perform Neighborhood Component Feature Selection 
 
         Parameters
         ----------
-        alpha : float
+        alpha : float, optional
             Initial step length for gradient ascent. Should be between 0 and 1.
+            Default is 0.1.
+        sigma : float, optional
+            Kernel width. Default is 1.
+        reg : float, optional
+            Regularization constant. Lambda in the original paper. Default is 1.
+        eta : float, optional
+            Stopping criteria for iteration. Threshold for difference between
+            objective function scores after each iteration. Default is 0.001.
+        metric : str, optional
+            Metric to calculate distances between samples. Must be a scipy
+            implemented distance and accept a parameter 'w' for a weighted
+            distance. Default is 'cityblock', as used in the original paper.
+
+        Attributes:
+        ----------
+        alpha : float
+            Step length for gradient ascent. Varies during training.
         sigma : float
             Kernel width.
         reg : float
             Regularization constant. Lambda in the original paper.
-        nu : float
+        eta : float
             Stopping criteria for iteration. Threshold for difference between
-            objective function scores after each iteration. 
+            objective function scores after each iteration.
+        metric : str
+            Distance metric to use.
+        coef_ : numpy.array
+            Feature weights. Unimportant features tend toward zero.
+        score_ : float
+            Objective function score at the end of fitting.
+
+        Methods
+        -------
+
+        fit : Fit feature weights given a particular data matrix and sample
+            labels.
+
+        References
+        ----------
+
+        Yang, W., Wang, K., & Zuo, W. (2012). Neighborhood Component Feature
+        Selection for High-Dimensional Data. Journal of Computers, 7(1).
+        https://doi.org/10.4304/jcp.7.1.161-168
         """
-        if not 0 < alpha < 1:
-            raise ValueError("Alpha value should be between 0 and 1.")
         self.alpha = alpha
         self.sigma = sigma
         self.reg = reg
-        self.nu = nu 
-        self.objective_ = np.inf
+        self.eta = eta 
+        self.metric = metric
+        self.coef_ = None
+        self.score_ = None
+
+    @staticmethod
+    def __check_X(X):
+        mins = np.min(X, axis=0)
+        maxes = np.max(X, axis=0)
+        if any(mins < 0):
+            raise ValueError('Values in X should be between 0 and 1.')
+        if any(maxes > 1):
+            raise ValueError('Values in X should be between 0 and 1.')
+        return X.astype(np.float64)
 
     def fit(self, X, y):
         """
@@ -105,8 +103,11 @@ class NCFS(object):
 
         Returns
         -------
-        None
+        Fitted NCFS object with weights stored in the `.coef_` instance
+        variable.
         """
+        if not 0 < self.alpha < 1:
+            raise ValueError("Alpha value should be between 0 and 1.")
         if not isinstance(X, np.ndarray):
             raise ValueError('`X` must be two-dimensional numpy array. Got ' + 
                              '{}.'.format(type(X)))
@@ -118,62 +119,146 @@ class NCFS(object):
                              'Got {}.'.format(type(y)))
         if y.shape[0] != X.shape[0]:
             raise ValueError('`X` and `y` must have the same row numbers.')
-        __check_X(X)
+        X= NCFS.__check_X(X)
         n_samples, n_features = X.shape
-        self.coef_ = np.ones(n_features, dtype=np.float_)
-        p_reference = np.zeros((n_samples, n_samples))
-        p_correct = np.zeros(n_samples)
-        deltas = np.zeros(n_features)
+        # initialize all weights as 1
+        self.coef_ = np.ones(n_features, dtype=np.float64)
+        # instantiate feature deltas to zero
+        deltas = np.zeros(n_features, dtype=np.float64)
+        # get initial step size
+        step_size = self.alpha 
         # construct adjacency matrix of class membership for matrix mult. 
-        class_mat = np.zeros((n_samples, n_samples))
+        class_mat = np.zeros((n_samples, n_samples), np.float64)
         for i in range(n_samples):
             for j in range(n_samples):
                 if y[i] == y[j]:
                     class_mat[i, j] = 1
 
-        current_objective = 0
-        while abs(self.objective_ - current_objective) > self.nu:
-            # calculate K(D_w(xi, xj)) for all i, j pairs
-            for i in range(n_samples):
-                for j in range(n_samples):
-                    if i == j:
-                        p_reference[i, j] = 0
-                    else:
-                        p_reference[i, j] = kernel_distance(X[i, :], X[j, :],
-                                                            self.sigma,
-                                                            self.coef_)
-            # scale p_reference by row sums 
-            scale_factors = 1 / p_reference.sum(axis = 1)
+        past_objective, loss = 0, np.inf
+        diag_idx = np.diag_indices(n_samples, 2)
+        while abs(loss) > self.eta:
+            # calculate D_w(x_i, x_j): w^2 * |x_i - x_j] for all i,j
+            distances = spatial.distance.pdist(X, metric=self.metric,
+                                               w=np.power(self.coef_, 2))
+            # organize as distance matrix
+            distances = spatial.distance.squareform(distances)
+            # calculate K(D_w(x_i, x_j)) for all i, j pairs
+            p_reference = np.exp(-1 * distances / self.sigma, dtype=np.float64)
+            # set p_ii = 0, can't select self in leave-one-out
+            p_reference[diag_idx] = 0
+
+            # add pseudocount if necessary to avoid dividing by zero
+            p_i = p_reference.sum(axis=0)
+            n_zeros = sum(p_i == 0)
+            if n_zeros > 0:
+                print('Adding pseudocounts to distance matrix to avoid ' +
+                      'dividing by zero.')
+                if n_zeros == len(p_i):
+                    pseudocount = np.exp(-20)
+                else:
+                    pseudocount = np.min(p_i)
+                p_i += pseudocount
+            scale_factors = 1 / (p_i)
             p_reference = p_reference * scale_factors
 
             # calculate probability of correct classification
-            p_correct = np.sum(p_reference * class_mat, axis=1)
+            p_correct = np.sum(p_reference * class_mat, axis=0)
 
             # caclulate weight adjustments
             for l in range(n_features):
+                # values for feature l starting with sample 0 to N
                 feature_vec = X[:, l].reshape(-1, 1)
-                # weighted sample distances
-                d_mat = spatial.distance_matrix(feature_vec, feature_vec)
-                d_mat = np.abs(d_mat) * p_reference
-                # weighted in-class distances
-                in_class = d_mat*class_mat
-                sample_terms = np.sum(p_correct * d_mat, axis=1) \
-                             - np.sum(in_class, axis=1)
+                # distance in feature l for all samples, d_ij
+                d_mat = spatial.distance.pdist(feature_vec, metric=self.metric)
+                d_mat = spatial.distance.squareform(d_mat)
+                # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
+                d_mat *= p_reference
+                # calculate p_i * sum(D_ij), j from 0 to N
+                all_term = p_correct * d_mat.sum(axis=0)
+                # weighted in-class distances using adjacency matrix,
+                in_class_term = np.sum(d_mat*class_mat, axis=0)
+                sample_terms = all_term - in_class_term
                 # calculate delta following gradient ascent 
-                deltas[l] = 2 * ((1 / self.sigma) * sample_terms.sum() \
-                          - self.reg) * self.coef_[l]
+                deltas[l] = 2 * self.coef_[l] \
+                          * ((1 / self.sigma) * sample_terms.sum() - self.reg)
                 
-            # update weights and other parameters
-            self.coef_ += self.alpha * deltas
-            self.objective_ = current_objective
-            current_objective = np.sum(p_reference * class_mat) \
-                              - self.reg * np.dot(self.coef_, self.coef_)
-            if current_objective > self.objective_:
-                self.alpha *= 1.01
+            # calculate objective function
+            new_objective = (np.sum(p_reference * class_mat) \
+                          - self.reg * np.dot(self.coef_, self.coef_))
+            # calculate loss from previous objective function
+            loss = new_objective - past_objective
+            # update weights
+            self.coef_ = self.coef_ + step_size * deltas
+            # reset objective score for new iteration
+            past_objective = new_objective
+            if loss > 0:
+                step_size *= 1.01
             else:
-                self.alpha *= 0.4
+                step_size *= 0.4
+        self.score_ = past_objective
+        return self
 
-def toy_dataset():
+    def transform(self, X):
+        """
+        Transform features according to their learned weights.
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            An `(n x p)` data matrix where `n` is the number of samples, and `p`
+            is the number of features. Features number and order should be the
+            same as those used to fit the model.  
+        
+        Raises
+        ------
+        RuntimeError
+            Raised if the NCFS object has not been fit yet.
+        ValueError
+            Raided if the number of feature dimensions does not match the
+            number of learned weights.
+        
+        Returns
+        -------
+        numpy.ndarray
+            Transformed data matrix calculated by multiplying each feature by
+            its learnt weight.
+        """
+
+        if self.coef_ is None:
+            raise RuntimeError('NCFS is not fit. Please fit the ' +
+                               'estimator by calling `.fit()`.')
+        if X.shape[1] != len(self.coef_):
+            raise ValueError('Expected data matrix `X` to contain the same' + 
+                             'number of features as learnt feature weights.')
+        NCFS.__check_X(X)
+        return X*self.coef_
+
+
+def toy_dataset(n_features=1000):
+    """
+    Generate a toy dataset with features from the original NCFS paper.
+    
+    Generate a toy dataset with features from the original NCFS paper. Signal
+    features are in the first index, and the 10th percent index (e.g.
+    :math:`0.1 * N`). See original paper for specific parameter values for
+    signal/noise features.
+    
+    Parameters
+    ----------
+    n_features : int, optional
+        Number of total features. Two of these features will feature signal,
+        the other N - 2 will be noise. The default is 1000.
+    
+    Returns
+    -------
+    tuple (X, y)
+        X : numpy.array
+            Simulated dataset with 200 samples (rows) and N features. Features
+            are scaled between 0 and 1.
+        y : numpy.array
+            Class membership for each sample in X.
+    """
+
     class_1 = np.zeros((100, 2))
     class_2 = np.zeros((100, 2))
     cov = np.identity(2)
@@ -188,9 +273,14 @@ def toy_dataset():
         else:
             class_2[i, :] = np.random.multivariate_normal([-3, 3], cov)
     class_data = np.vstack((class_1, class_2))
-    bad_features = np.random.normal(loc=0, scale=np.sqrt(20), size=(200, 1000))
-    data = np.hstack((class_data[:, 0].reshape(-1, 1), bad_features[:, :99],
-                      class_data[:, 1].reshape(-1, 1), bad_features[:, 99:]))
+    n_irrelevant = n_features - 2
+    second_idx = int(0.1*(n_features)) - 1
+    bad_features = np.random.normal(loc=0, scale=np.sqrt(20),
+                                    size=(200, n_irrelevant))
+    data = np.hstack((class_data[:, 0].reshape(-1, 1),
+                      bad_features[:, :second_idx],
+                      class_data[:, 1].reshape(-1, 1),
+                      bad_features[:, second_idx:]))
     classes = np.array([0]*100 + [1]*100)
     # scale between 0 - 1
     x_std = (data - data.min(axis=0)) / (data.max(axis=0) - data.min(axis=0))
@@ -198,5 +288,5 @@ def toy_dataset():
 
 if __name__ == '__main__':
     X, y = toy_dataset()
-    f_select = NCFS(alpha=0.01, sigma=1, reg=1, nu=0.001)
+    f_select = NCFS(alpha=0.01, sigma=1, reg=1, eta=0.001)
     f_select.fit(X, y)
