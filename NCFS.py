@@ -12,10 +12,101 @@ import numpy as np
 from scipy import spatial
 from sklearn import base
 
+def kernel_distance(distance_matrix, sigma, kernel='exponential'):
+    """
+    Calculate sample distances in kernel spaces.
+    
+    Parameters
+    ----------
+    distance_matrix : np.ndarray
+        An (n x n) matrix of sample distances.
+    sigma : [type]
+        Sigma parameter for spread in kernel
+    kernel : str, optional
+        Which kernel to use. Options include 'exponential' and 'gaussian'.
+        The default is 'exponential'.
+    
+    Returns
+    -------
+        (numpy.ndarray)
+        Kernel transformed sample distances.
+    """
+
+    kernel_space = np.zeros(distance_matrix.shape, dtype=np.float64)
+    if kernel == 'exponential':
+        kernel_space = np.exp(-1 * distance_matrix / sigma, dtype=np.float64)
+    elif kernel == 'guassian':
+        # calculate mean distances between non-identity cells
+        mean_dist = (distance_matrix).sum() / (distance_matrix.shape[0] - 1)**2
+        kernel_space = np.exp(-1 * (distance_matrix - mean_dist)**2 / sigma,
+                              dtype=np.float64)
+    else:
+        raise ValueError("Unsupported kernel: {}".format(kernel))
+
+    return kernel_space
+
+class KernelMixin(object):
+
+    def __init__(self, sigma, reg, weights):
+        self.sigma = sigma
+        self.reg = reg
+        self.weights = weights
+
+    def transform(self, distance_matrix):
+        return distance_matrix
+
+    def gradient_deltas(self, p_reference, data_matrix, class_matrix,
+                        metric='cityblock'):
+        return np.zeros(data_matrix.shape[1])
+
+    def update_weights(self, new_weights):
+        self.weights = new_weights
+
+class ExponentialKernel(KernelMixin):
+
+    def transform(self, distance_matrix):
+        return np.exp(-1 * distance_matrix / self.sigma, dtype=np.float64)
+
+    def gradient_deltas(self, p_reference, data_matrix, class_matrix,
+                        metric='cityblock'):
+        deltas = np.zeros(data_matrix.shape[0], dtype=np.float64)
+        # calculate probability of correct classification
+        # check class mat one hot shit
+        p_correct = np.sum(p_reference * class_matrix, axis=0)
+
+        # caclulate weight adjustments
+        for l in range(data_matrix.shape[1]):
+            # values for feature l starting with sample 0 to N
+            feature_vec = data_matrix[:, l].reshape(-1, 1)
+            # distance in feature l for all samples, d_ij
+            d_mat = spatial.distance.pdist(feature_vec, metric=metric)
+            d_mat = spatial.distance.squareform(d_mat)
+            # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
+            d_mat *= p_reference
+            # calculate p_i * sum(D_ij), j from 0 to N
+            all_term = p_correct * d_mat.sum(axis=0)
+            # weighted in-class distances using adjacency matrix,
+            in_class_term = np.sum(d_mat * class_matrix, axis=0)
+            sample_terms = all_term - in_class_term
+            # calculate delta following gradient ascent 
+            deltas[l] = 2 * self.weights[l] \
+                        * ((1 / self.sigma) * sample_terms.sum() - self.reg)
+        return deltas
+
+
+class GaussianKernel(KernelMixin):
+
+    def transform(self, distance_matrix):
+        mean_dist = (distance_matrix).sum() / (distance_matrix.shape[0] - 1)**2
+        return np.exp(-1 * (distance_matrix - mean_dist)**2 / self.sigma,
+                      dtype=np.float64)
+
+
+
 class NCFS(base.BaseEstimator, base.TransformerMixin): 
 
     def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
-                 metric='cityblock'):
+                 metric='cityblock', kernel='exponential'):
         """
         Class to perform Neighborhood Component Feature Selection 
 
@@ -35,6 +126,9 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             Metric to calculate distances between samples. Must be a scipy
             implemented distance and accept a parameter 'w' for a weighted
             distance. Default is 'cityblock', as used in the original paper.
+        kernel : str, optional
+            Method to calculate kerel distance between samples. Default is 
+            'exponential', as used in the original NCFS paper.
 
         Attributes:
         ----------
@@ -72,6 +166,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.reg = reg
         self.eta = eta 
         self.metric = metric
+        self.kernel = kernel
         self.coef_ = None
         self.score_ = None
 
@@ -143,7 +238,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             # organize as distance matrix
             distances = spatial.distance.squareform(distances)
             # calculate K(D_w(x_i, x_j)) for all i, j pairs
-            p_reference = np.exp(-1 * distances / self.sigma, dtype=np.float64)
+            p_reference = kernel_distance(distances, self.sigma, self.kernel)
             # set p_ii = 0, can't select self in leave-one-out
             p_reference[diag_idx] = 0
 
@@ -162,6 +257,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             p_reference = p_reference * scale_factors
 
             # calculate probability of correct classification
+            # check class mat one hot shit
             p_correct = np.sum(p_reference * class_mat, axis=0)
 
             # caclulate weight adjustments
