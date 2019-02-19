@@ -290,3 +290,4 @@ if __name__ == '__main__':
     X, y = toy_dataset()
     f_select = NCFS(alpha=0.01, sigma=1, reg=1, eta=0.001)
     f_select.fit(X, y)
+    print(f_select.coef_[0], f_select.coef_[100])
