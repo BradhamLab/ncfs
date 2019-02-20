@@ -64,12 +64,15 @@ class KernelMixin(object):
 
 class ExponentialKernel(KernelMixin):
 
+    def __init__(self, sigma, reg, weights):
+        super(ExponentialKernel, self).__init__(sigma, reg, weights)
+
     def transform(self, distance_matrix):
         return np.exp(-1 * distance_matrix / self.sigma, dtype=np.float64)
 
     def gradient_deltas(self, p_reference, data_matrix, class_matrix,
                         metric='cityblock'):
-        deltas = np.zeros(data_matrix.shape[0], dtype=np.float64)
+        deltas = np.zeros(data_matrix.shape[1], dtype=np.float64)
         # calculate probability of correct classification
         # check class mat one hot shit
         p_correct = np.sum(p_reference * class_matrix, axis=0)
@@ -95,6 +98,9 @@ class ExponentialKernel(KernelMixin):
 
 
 class GaussianKernel(KernelMixin):
+
+    def __init__(self, sigma, reg, weights):
+        super(GaussianKernel, self).__init__(sigma, reg, weights)
 
     def transform(self, distance_matrix):
         mean_dist = (distance_matrix).sum() / (distance_matrix.shape[0] - 1)**2
@@ -218,8 +224,16 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         n_samples, n_features = X.shape
         # initialize all weights as 1
         self.coef_ = np.ones(n_features, dtype=np.float64)
-        # instantiate feature deltas to zero
-        deltas = np.zeros(n_features, dtype=np.float64)
+
+        # intialize kernel function
+        if self.kernel == 'exponential':
+            kernel = ExponentialKernel(self.sigma, self.reg, self.coef_)
+        elif self.kernel == 'gaussian':
+            kernel = GaussianKernel(self.sigma, self.reg, self.coef_)
+        else:
+            raise ValueError('Unsupported kernel ' +
+                             'function: {}'.format(self.kernel))
+
         # get initial step size
         step_size = self.alpha 
         # construct adjacency matrix of class membership for matrix mult. 
@@ -238,7 +252,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             # organize as distance matrix
             distances = spatial.distance.squareform(distances)
             # calculate K(D_w(x_i, x_j)) for all i, j pairs
-            p_reference = kernel_distance(distances, self.sigma, self.kernel)
+            p_reference = kernel.transform(distances)
             # set p_ii = 0, can't select self in leave-one-out
             p_reference[diag_idx] = 0
 
@@ -256,27 +270,9 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             scale_factors = 1 / (p_i)
             p_reference = p_reference * scale_factors
 
-            # calculate probability of correct classification
-            # check class mat one hot shit
-            p_correct = np.sum(p_reference * class_mat, axis=0)
-
             # caclulate weight adjustments
-            for l in range(n_features):
-                # values for feature l starting with sample 0 to N
-                feature_vec = X[:, l].reshape(-1, 1)
-                # distance in feature l for all samples, d_ij
-                d_mat = spatial.distance.pdist(feature_vec, metric=self.metric)
-                d_mat = spatial.distance.squareform(d_mat)
-                # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
-                d_mat *= p_reference
-                # calculate p_i * sum(D_ij), j from 0 to N
-                all_term = p_correct * d_mat.sum(axis=0)
-                # weighted in-class distances using adjacency matrix,
-                in_class_term = np.sum(d_mat*class_mat, axis=0)
-                sample_terms = all_term - in_class_term
-                # calculate delta following gradient ascent 
-                deltas[l] = 2 * self.coef_[l] \
-                          * ((1 / self.sigma) * sample_terms.sum() - self.reg)
+            deltas = kernel.gradient_deltas(p_reference, X, class_mat,
+                                            metric=self.metric)
                 
             # calculate objective function
             new_objective = (np.sum(p_reference * class_mat) \
@@ -285,6 +281,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             loss = new_objective - past_objective
             # update weights
             self.coef_ = self.coef_ + step_size * deltas
+            kernel.update_weights(self.coef_)
             # reset objective score for new iteration
             past_objective = new_objective
             if loss > 0:
@@ -386,4 +383,5 @@ if __name__ == '__main__':
     X, y = toy_dataset()
     f_select = NCFS(alpha=0.01, sigma=1, reg=1, eta=0.001)
     f_select.fit(X, y)
+    print(np.argsort(-f_select.coef_)[:10])
     print(f_select.coef_[0], f_select.coef_[100])
