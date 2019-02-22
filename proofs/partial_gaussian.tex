@@ -1,0 +1,202 @@
+\documentclass[12pt, a4paper]{article}
+\usepackage{amsmath}
+\usepackage[left=1in, right=1in, top=1in, bottom=1in]{geometry}
+\usepackage{upgreek}
+\setlength{\parindent}{0pt}
+
+\title{Partial Derivative of Gaussian Kernel Distance}
+\author{Dakota Y. Hawkins}
+
+\begin{document}
+\maketitle
+
+
+\begin{section}{Identities}
+    Let $X$ be an $(N \times M)$ data matrix where $N$ is the number of samples
+    and $M$ is the number of features. Then, $x_i$ is an $M$ length feature
+    vector for sample $i$. Likewise, let $\vec w$ be an $M$ element vector where
+    each $w_l$ is a feature weight describing the importance of feature $l$. Let
+    $y_{ij}$ represent the class identity function, such that $y_{ij} = 1$ if
+    and only if $class(i) = class(j)$
+
+    \begin{equation} \label{D}
+        D_{\vec w}(x_i, x_j) = \sum \limits_{l = 1}^M w_l^2
+                               \left ( x_{il} - x_{jl} \right )^2
+    \end{equation}
+    \begin{equation} \label{d.avg}
+        \bar d = \dfrac{\sum \limits_{k \neq i}^N D_{\vec w}(x_i, x_k)}{(N - 1)}
+    \end{equation}
+    \begin{equation} \label{D.bar}
+    \bar D_{\vec w}(x_i, x_j, \bar d) = D_{\vec w}(x_i, x_j) - \bar d
+    \end{equation}
+    \begin{equation} \label{k.dist}
+        K(\bar D_{\vec w}(x_i, x_j, \bar d)) = \exp{\left ( -  \dfrac
+                                                  {D_{\vec w}(x_i, x_j, \bar d)}
+                                                  {\sigma} \right )}
+    \end{equation}
+    \begin{equation} \label{pij}
+        p_{ij} = \dfrac{K(\bar D_{\vec w}(x_i, x_j, \bar d))}{\sum
+                 \limits_{k != i}^N K(\bar D_{\vec w}(x_i, x_k, \bar d))}
+    \end{equation}
+    \begin{equation} \label{d_l}
+        \bar d_l = \dfrac{\sum \limits_{k \neq i}^N (x_{il} - x_{kl})^2}
+                         {(N - 1)} 
+    \end{equation}
+    \begin{equation} \label{obj}
+        \upxi(\vec w) = \sum \limits_i^N \sum \limits_{j \neq i}^N y_{ij} p_{ij}
+                         - \lambda \sum \limits_l^M w_l^2
+    \end{equation}
+
+    \begin{itemize}
+        \item Equation \ref{D} is the weighted euclidean distance between
+            samples $i$ and $j$.
+        \item Equation \ref{d.avg} represents the average weighted
+            distance between sample $i$ and all other samples.
+        \item Equation \ref{D.bar} is the weighted distance between samples $i$
+            and $j$ centered around the average distance from $i$
+        \item Equation \ref{k.dist} is the kernel distance between samples.
+        \item Equation \ref{pij} describes the probability of selecting
+            sample $j$.
+        \item Equation \ref{d_l} is the average distance between samples $i$
+            and $j$ in feature $l$.
+        \item Equation \ref{obj} is the objective function we wish to
+            maximize.
+    \end{itemize}
+ 
+\end{section}
+
+\begin{section}{Partial of Kernel Distance} \label{sec:2}
+    Taking the partial derivative of \ref{k.dist} with respect to $w_l$, for
+    brevity, let  $\bar D_{\vec w}(x_i, x_j, \bar d) = \bar D$ and begin by
+    finding $\dfrac{\partial \bar D}{\partial w_l}$:
+
+    \begin{align*}
+        \frac{\partial \bar D}{\partial w_l} &= \frac{\partial}{\partial w_l}
+            \left (D_{\vec w}(x_i, x_j) - \bar d \right) \\
+            &= \frac{\partial}{\partial w_l} D_{\vec w}(x_i, x_j)
+             - \frac{\partial}{\partial w_l} \bar d \\
+            &= 2w_l(x_{il} - x_{jl})^2 - \frac{2w_l}{(N - 1)}
+               \sum \limits_{k \neq i}^N (x_{il} - x_{kl})^2 \\
+        \frac{\partial \bar D}{\partial w_l} &= 
+            2w_l\left ( (x_{il} - x_{jl})^2 - \bar d_l \right )
+    \end{align*}
+
+    \begin{align*}
+        \dfrac{\partial K(\bar D)}{\partial w_l} &= 
+                \dfrac{\partial }{\partial w_l}
+                \exp{\left ( - \frac{\bar D}{\sigma} \right )} \\
+        &= \frac{\partial}{\partial \bar D} 
+                \exp{ \left ( -  \frac{\bar D}{\sigma} \right )}
+                \frac{\partial \bar D}{\partial w_l} \\
+        &= - \frac{1}{\sigma} \exp{ \left ( -  \frac{\bar D}{\sigma} \right )}
+             \frac{\partial \bar D}{\partial w_l} \\
+        \dfrac{\partial K (\bar D) }{\partial w_l}
+            &= - \frac{ 2w_l\left ( (x_{il} - x_{jl})^2 - \bar d_l \right )}{\sigma}
+               K(\bar D)
+    \end{align*}
+
+    It immediately follows:
+    \[
+      \frac{\partial}{\partial w_l} \sum \limits_{k \neq i}^N
+      K (\bar D_{\vec w}(x_i, x_k, \bar d) )
+      =
+      \frac{-2 w_l}{\sigma} \sum \limits_{k \neq i}^N
+        \left ( (x_{il} - x_{kl})^2 - \bar d_l \right )
+        K (\bar D_{\vec w}(x_i, x_k, \bar d) ) 
+    \]
+\end{section}
+\begin{section}{Partial of $p_{ij}$} \label{sec:3}
+
+    Again for brevity, let $f_1 = K (\bar D_{\vec w}(x_i, x_j, \bar d) )$ and
+    $f_2 = \sum \limits_{k \neq i}^N K (\bar D_{\vec w}(x_i, x_k, \bar d) )$.
+    Then:
+
+    \begin{align*}
+        \frac{\partial p_{ij}}{\partial w_l} &=
+        \frac{\partial}{\partial w_l} \left (
+        \frac{K (\bar D_{\vec w}(x_i, x_j, \bar d))}
+            {\sum \limits_{k \neq i}^N K (\bar D_{\vec w}(x_i, x_k, \bar d))}
+            \right ) \\
+        &=  
+            \frac{\partial}{\partial w_l} \frac{f_1}{f_2} \\
+        \frac{\partial p_{ij}}{\partial w_l}
+        &= 
+        \frac{\partial f_1}{\partial w_l} f_2^{-1} +
+           f_1 \frac{\partial f_2^{-1}}{\partial w_l}
+    \end{align*}
+
+    Plugging in the partial derivative for kernel distances found in section
+    \ref{sec:2}:
+
+    \begin{align*}
+        \frac{\partial f_1}{\partial w_l} f_2^{-1} &= 
+            - \frac{ 2w_l\left ( (x_{il} - x_{jl})^2 - \bar d_l \right )}{\sigma}
+            \frac{f_1}{f_2} \\
+        \frac{\partial f_1}{\partial w_l} f_2^{-1} &= 
+            - \frac{ 2w_l\left ( (x_{il} - x_{jl})^2 - \bar d_l \right )}{\sigma}
+            p_{ij}
+    \end{align*}
+
+    Plugging in the partial derivative for the sum of kernel distances also
+    found in secion \ref{sec:2}:
+
+    \begin{align*}
+        f_1 \frac{\partial f_2}{\partial w_l} &= 
+            - \frac{f_1}{f_2^2} \frac{\partial}{\partial w_l}f_2 \\
+        &= - \frac{p_{ij}}{f_2} \frac{\partial}{\partial w_l}f_2 \\
+        &= \frac{2w_l p_{ij}}{\sigma f_2} \sum \limits_{k \neq i}^N
+        \left ( (x_{il} - x_{kl})^2 - \bar d_l \right )
+        K (\bar D_{\vec w}(x_i, x_k, \bar d) \\
+        &= \frac{2w_l p_{ij}}{\sigma} \sum \limits_{k \neq i}^N
+        \left ( (x_{il} - x_{kl})^2 - \bar d_l \right ) \frac{f_{1k}}{f_2} \\
+        f_1 \frac{\partial f_2}{\partial w_l} &=
+        \frac{2w_l p_{ij}}{\sigma} \sum \limits_{k \neq i}^N
+        \left ( (x_{il} - x_{kl})^2 - \bar d_l \right ) p_{ik}
+    \end{align*}
+
+    Combining terms:
+
+    \begin{align*}
+        \frac{\partial p_{ij}}{\partial w_l}
+        &= 
+            \frac{\partial f_1}{\partial w_l} f_2^{-1} +
+            f_1 \frac{\partial f_2^{-1}}{\partial w_l} \\
+        &= 
+        - \frac{ 2w_l\left ( (x_{il} - x_{jl})^2 - \bar d_l \right )}{\sigma}
+        p_{ij} + \frac{2w_l p_{ij}}{\sigma} \sum \limits_{k \neq i}^N
+        \left ( (x_{il} - x_{kl})^2 - \bar d_l \right ) p_{ik} \\
+        \frac{\partial p_{ij}}{\partial w_l}
+        &= \frac{2 w_l p_{ij}}{\sigma} 
+            \left (
+                \sum \limits_{k \neq i}^N
+                \left [ \left ( (x_{il} - x_{kl})^2 - \bar d_l \right ) p_{ik}
+                \right ] -
+                \left ( (x_{il} - x_{jl})^2 - \bar d_l \right )
+            \right )
+    \end{align*}
+\end{section}
+
+\begin{section}{Partial of objective function}
+
+    \begin{align*}
+        \upxi(\vec w) &= \sum \limits_i^N \sum \limits_{j \neq i}^N y_{ij} p_{ij}
+        - \lambda \sum \limits_l^M w_l^2 \\
+        \frac{\partial \upxi(\vec w)}{\partial w_l} &=
+            \frac{\partial}{\partial w_l} \left ( 
+                \sum \limits_i^N \sum \limits_{j \neq i}^N y_{ij} p_{ij}
+                - \lambda \sum \limits_l^M w_l^2 \right ) \\
+        &=
+            \sum \limits_i^N \sum \limits_{j \neq i}^N y_{ij}
+                \frac{\partial}{\partial w_l}  p_{ij}
+            - \lambda \sum \limits_l^M \frac{\partial}{\partial w_l} w_l^2 \\
+        \frac{\partial \upxi(\vec w)}{\partial w_l}
+        &=
+            \sum \limits_i^N \sum \limits_{j \neq i}^N y_{ij}
+            \frac{\partial}{\partial w_l}  p_{ij} - 2 \lambda w_l \\
+    \end{align*}
+\end{section}
+
+
+
+
+\end{document}
