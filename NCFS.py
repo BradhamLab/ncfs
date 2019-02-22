@@ -12,7 +12,7 @@ import numpy as np
 from scipy import spatial
 from sklearn import base
 
-def pairwise_distance(data_matrix, metric='euclidean'):
+def pairwise_feature_distance(data_matrix, metric='seuclidean'):
     """
     Calculate the pairwise distance between each sample in each feature.
     
@@ -39,47 +39,44 @@ def pairwise_distance(data_matrix, metric='euclidean'):
                                                 metric=metric))
     return dists
 
+def center_distances(distance_matrix):
+    """
+    Mean-center a distance matrix per row.
+    
+    Parameters
+    ----------
+    distance_matrix : np.ndarray
+        A square distance matrix.
+    
+    Returns
+    -------
+    np.ndarray
+        A centered distance matrix where values are centered by row means. 
+    """
+
+    mean_dists = np.sum(distance_matrix, axis=1)\
+                / (distance_matrix.shape[0] - 1)
+    center_mat = np.ones((mean_dists.size, mean_dists.size)) * mean_dists
+    return distance_matrix - center_mat.T
+
 class KernelMixin(object):
 
-    def __init__(self, sigma, reg, metric, weights):
+    def __init__(self, sigma, reg, weights):
         self.sigma = sigma
         self.reg = reg
-        self.metric = metric
         self.weights = weights
 
     def transform(self, distance_matrix):
         return distance_matrix
 
-    def gradient_deltas(self, p_reference, data_matrix, class_matrix,
-                        metric='cityblock'):
-        return np.zeros(data_matrix.shape[1])
-
-    def update_weights(self, new_weights):
-        self.weights = new_weights
-
-
-class ExponentialKernel(KernelMixin):
-
-    def __init__(self, sigma, reg, metric, weights):
-        super(ExponentialKernel, self).__init__(sigma, reg, metric, weights)
-
-    def transform(self, distance_matrix):
-        return np.exp(-1 * distance_matrix / self.sigma, dtype=np.float64)
-
-    def gradient_deltas(self, p_reference, data_matrix, class_matrix,
-                        metric='cityblock'):
-        deltas = np.zeros(data_matrix.shape[1], dtype=np.float64)
+    def gradient_deltas(self, p_reference, feature_distances, class_matrix):
+        deltas = np.zeros(feature_distances.shape[0], dtype=np.float64)
         # calculate probability of correct classification
         # check class mat one hot shit
         p_correct = np.sum(p_reference * class_matrix, axis=0)
-
-        # calculate unweighted, pairwise distance between all samples
-        # in all features
-        feature_distances = pairwise_distance(data_matrix, metric=self.metric)
-
         # caclulate weight adjustments
-        for l in range(data_matrix.shape[1]):
-            # distance matrix between all samples in feature l
+        for l in range(feature_distances.shape[0]):
+            # distance in feature l for all samples, d_ij
             d_mat = feature_distances[l]
             # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
             d_mat *= p_reference
@@ -90,55 +87,36 @@ class ExponentialKernel(KernelMixin):
             sample_terms = all_term - in_class_term
             # calculate delta following gradient ascent 
             deltas[l] = 2 * self.weights[l] \
-                        * ((1 / self.sigma) * sample_terms.sum() - self.reg)
+                      * ((1 / self.sigma) * sample_terms.sum() - self.reg)
         return deltas
+
+    def update_weights(self, new_weights):
+        self.weights = new_weights
+
+
+class ExponentialKernel(KernelMixin):
+
+    def __init__(self, sigma, reg, weights):
+        super(ExponentialKernel, self).__init__(sigma, reg, weights)
+
+    def transform(self, distance_matrix):
+        return np.exp(-1 * distance_matrix / self.sigma, dtype=np.float64)
 
 
 class GaussianKernel(KernelMixin):
 
-    def __init__(self, sigma, reg, metric, weights):
-        super(GaussianKernel, self).__init__(sigma, reg, metric, weights)
+    def __init__(self, sigma, reg, weights):
+        super(GaussianKernel, self).__init__(sigma, reg, weights)
 
     def transform(self, distance_matrix):
-        centered = self.__scale_distances(distance_matrix)
+        centered = center_distances(distance_matrix)
         return np.exp(-1 * centered / self.sigma, dtype=np.float64)
-
-    def gradient_deltas(self, p_reference, data_matrix, class_matrix,
-                        metric='cityblock'):
-        deltas = np.zeros(data_matrix.shape[1], dtype=np.float64)
-        # calculate probability of correct classification
-        # check class mat one hot shit
-        p_correct = np.sum(p_reference * class_matrix, axis=0)
-        # caclulate weight adjustments
-        for l in range(data_matrix.shape[1]):
-            # values for feature l starting with sample 0 to N
-            feature_vec = data_matrix[:, l].reshape(-1, 1)
-            # distance in feature l for all samples, d_ij
-            d_mat = spatial.distance.pdist(feature_vec, metric=metric) # only need to calculate this once
-            d_mat = spatial.distance.squareform(d_mat)
-            # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
-            d_mat *= p_reference
-            # calculate p_i * sum(D_ij), j from 0 to N
-            all_term = p_correct * d_mat.sum(axis=0)
-            # weighted in-class distances using adjacency matrix,
-            in_class_term = np.sum(d_mat * class_matrix, axis=0)
-            sample_terms = all_term - in_class_term
-            # calculate delta following gradient ascent 
-            deltas[l] = 2 * self.weights[l] \
-                        * ((1 / self.sigma) * sample_terms.sum() - self.reg)
-
-    def __scale_distances(self, distance_matrix):
-        mean_dists = np.sum(distance_matrix, axis=0)\
-                   / (distance_matrix.shape[0] - 1)
-        center_mat = np.ones((mean_dists.size, mean_dists.size)) * mean_dists
-        return distance_matrix - center_mat.T
-
 
 
 class NCFS(base.BaseEstimator, base.TransformerMixin): 
 
     def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
-                 metric='cityblock', kernel='exponential'):
+                 metric='sqeuclidean', kernel='exponential'):
         """
         Class to perform Neighborhood Component Feature Selection 
 
@@ -157,7 +135,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         metric : str, optional
             Metric to calculate distances between samples. Must be a scipy
             implemented distance and accept a parameter 'w' for a weighted
-            distance. Default is 'cityblock', as used in the original paper.
+            distance. Default is the squared euclidean distance.
         kernel : str, optional
             Method to calculate kerel distance between samples. Default is 
             'exponential', as used in the original NCFS paper.
@@ -251,13 +229,16 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         # initialize all weights as 1
         self.coef_ = np.ones(n_features, dtype=np.float64)
 
-        # intialize kernel function
+        # intialize kernel function, and assign expected feature distances 
+        feature_distances = None
         if self.kernel == 'exponential':
-            kernel = ExponentialKernel(self.sigma, self.reg, self.metric,
-                                       self.coef_)
+            kernel = ExponentialKernel(self.sigma, self.reg, self.coef_)
+            feature_distances = pairwise_feature_distance(X, metric=self.metric)
         elif self.kernel == 'gaussian':
-            kernel = GaussianKernel(self.sigma, self.reg, self.metric,
-                                    self.coef_)
+            kernel = GaussianKernel(self.sigma, self.reg, self.coef_)
+            feature_distances = pairwise_feature_distance(X, metric=self.metric)
+            for l in range(feature_distances.shape[0]):
+                feature_distances[l] = center_distances(feature_distances[l])
         else:
             raise ValueError('Unsupported kernel ' +
                              'function: {}'.format(self.kernel))
@@ -273,6 +254,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
 
         past_objective, loss = 0, np.inf
         diag_idx = np.diag_indices(n_samples, 2)
+        feature_distances = pairwise_feature_distance(X, metric=self.metric)
         while abs(loss) > self.eta:
             # calculate D_w(x_i, x_j): w^2 * |x_i - x_j] for all i,j
             distances = spatial.distance.pdist(X, metric=self.metric,
@@ -299,8 +281,8 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             p_reference = p_reference * scale_factors
 
             # caclulate weight adjustments
-            deltas = kernel.gradient_deltas(p_reference, X, class_mat,
-                                            metric=self.metric)
+            deltas = kernel.gradient_deltas(p_reference, feature_distances,
+                                            class_mat)
                 
             # calculate objective function
             new_objective = (np.sum(p_reference * class_mat) \
@@ -409,7 +391,7 @@ def toy_dataset(n_features=1000):
 
 if __name__ == '__main__':
     X, y = toy_dataset()
-    f_select = NCFS(alpha=0.01, sigma=1, reg=1, eta=0.001)
+    f_select = NCFS(alpha=0.01, sigma=1, reg=1, eta=0.001, metric='cityblock')
     f_select.fit(X, y)
     print(np.argsort(-f_select.coef_)[:10])
     print(f_select.coef_[0], f_select.coef_[100])
