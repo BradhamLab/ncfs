@@ -103,9 +103,39 @@ class GaussianKernel(KernelMixin):
         super(GaussianKernel, self).__init__(sigma, reg, weights)
 
     def transform(self, distance_matrix):
+        centered = GaussianKernel.__scale_distances(distance_matrix)
+        return np.exp(-1 * centered / self.sigma, dtype=np.float64)
+
+    def gradient_deltas(self, p_reference, data_matrix, class_matrix,
+                        metric='cityblock'):
+        deltas = np.zeros(data_matrix.shape[1], dtype=np.float64)
+        # calculate probability of correct classification
+        # check class mat one hot shit
+        p_correct = np.sum(p_reference * class_matrix, axis=0)
+        # caclulate weight adjustments
+        for l in range(data_matrix.shape[1]):
+            # values for feature l starting with sample 0 to N
+            feature_vec = data_matrix[:, l].reshape(-1, 1)
+            # distance in feature l for all samples, d_ij
+            d_mat = spatial.distance.pdist(feature_vec, metric=metric)
+            d_mat = spatial.distance.squareform(d_mat)
+            # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
+            d_mat *= p_reference
+            # calculate p_i * sum(D_ij), j from 0 to N
+            all_term = p_correct * d_mat.sum(axis=0)
+            # weighted in-class distances using adjacency matrix,
+            in_class_term = np.sum(d_mat * class_matrix, axis=0)
+            sample_terms = all_term - in_class_term
+            # calculate delta following gradient ascent 
+            deltas[l] = 2 * self.weights[l] \
+                        * ((1 / self.sigma) * sample_terms.sum() - self.reg)
+
+        
+
+    @staticmethod
+    def __scale_distances(distance_matrix):
         mean_dist = (distance_matrix).sum() / (distance_matrix.shape[0] - 1)**2
-        return np.exp(-1 * (distance_matrix - mean_dist)**2 / self.sigma,
-                      dtype=np.float64)
+        return (distance_matrix - mean_dist)**2
 
 
 
