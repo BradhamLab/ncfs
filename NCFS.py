@@ -12,44 +12,39 @@ import numpy as np
 from scipy import spatial
 from sklearn import base
 
-def kernel_distance(distance_matrix, sigma, kernel='exponential'):
+def pairwise_distance(data_matrix, metric='euclidean'):
     """
-    Calculate sample distances in kernel spaces.
+    Calculate the pairwise distance between each sample in each feature.
     
     Parameters
     ----------
-    distance_matrix : np.ndarray
-        An (n x n) matrix of sample distances.
-    sigma : [type]
-        Sigma parameter for spread in kernel
-    kernel : str, optional
-        Which kernel to use. Options include 'exponential' and 'gaussian'.
-        The default is 'exponential'.
+    data_matrix : numpy.ndarray
+        An (N x M) data matrix where N is the number of samples and M is the
+        number of features.
+    metric : str, optional
+        Distance metric to use. The default is 'euclidean'.
     
     Returns
     -------
-        (numpy.ndarray)
-        Kernel transformed sample distances.
+    numpy.ndarray
+        An (M x N X N) numpy array where array[0] is the distance matrix
+        representing pairwise distances between samples in feature 0.
     """
-
-    kernel_space = np.zeros(distance_matrix.shape, dtype=np.float64)
-    if kernel == 'exponential':
-        kernel_space = np.exp(-1 * distance_matrix / sigma, dtype=np.float64)
-    elif kernel == 'guassian':
-        # calculate mean distances between non-identity cells
-        mean_dist = (distance_matrix).sum() / (distance_matrix.shape[0] - 1)**2
-        kernel_space = np.exp(-1 * (distance_matrix - mean_dist)**2 / sigma,
-                              dtype=np.float64)
-    else:
-        raise ValueError("Unsupported kernel: {}".format(kernel))
-
-    return kernel_space
+    # matrix to hold pairwise distances between samples in each feature
+    dists = np.zeros((data_matrix.shape[1],
+                        data_matrix.shape[0], data_matrix.shape[0]))
+    for j in range(data_matrix.shape[1]):
+        dists[j] = spatial.distance.squareform(
+                        spatial.distance.pdist(X[:, j].reshape(-1, 1),
+                                                metric=metric))
+    return dists
 
 class KernelMixin(object):
 
-    def __init__(self, sigma, reg, weights):
+    def __init__(self, sigma, reg, metric, weights):
         self.sigma = sigma
         self.reg = reg
+        self.metric = metric
         self.weights = weights
 
     def transform(self, distance_matrix):
@@ -62,10 +57,11 @@ class KernelMixin(object):
     def update_weights(self, new_weights):
         self.weights = new_weights
 
+
 class ExponentialKernel(KernelMixin):
 
-    def __init__(self, sigma, reg, weights):
-        super(ExponentialKernel, self).__init__(sigma, reg, weights)
+    def __init__(self, sigma, reg, metric, weights):
+        super(ExponentialKernel, self).__init__(sigma, reg, metric, weights)
 
     def transform(self, distance_matrix):
         return np.exp(-1 * distance_matrix / self.sigma, dtype=np.float64)
@@ -77,13 +73,14 @@ class ExponentialKernel(KernelMixin):
         # check class mat one hot shit
         p_correct = np.sum(p_reference * class_matrix, axis=0)
 
+        # calculate unweighted, pairwise distance between all samples
+        # in all features
+        feature_distances = pairwise_distance(data_matrix, metric=self.metric)
+
         # caclulate weight adjustments
         for l in range(data_matrix.shape[1]):
-            # values for feature l starting with sample 0 to N
-            feature_vec = data_matrix[:, l].reshape(-1, 1)
-            # distance in feature l for all samples, d_ij
-            d_mat = spatial.distance.pdist(feature_vec, metric=metric)
-            d_mat = spatial.distance.squareform(d_mat)
+            # distance matrix between all samples in feature l
+            d_mat = feature_distances[l]
             # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
             d_mat *= p_reference
             # calculate p_i * sum(D_ij), j from 0 to N
@@ -99,11 +96,11 @@ class ExponentialKernel(KernelMixin):
 
 class GaussianKernel(KernelMixin):
 
-    def __init__(self, sigma, reg, weights):
-        super(GaussianKernel, self).__init__(sigma, reg, weights)
+    def __init__(self, sigma, reg, metric, weights):
+        super(GaussianKernel, self).__init__(sigma, reg, metric, weights)
 
     def transform(self, distance_matrix):
-        centered = GaussianKernel.__scale_distances(distance_matrix)
+        centered = self.__scale_distances(distance_matrix)
         return np.exp(-1 * centered / self.sigma, dtype=np.float64)
 
     def gradient_deltas(self, p_reference, data_matrix, class_matrix,
@@ -117,7 +114,7 @@ class GaussianKernel(KernelMixin):
             # values for feature l starting with sample 0 to N
             feature_vec = data_matrix[:, l].reshape(-1, 1)
             # distance in feature l for all samples, d_ij
-            d_mat = spatial.distance.pdist(feature_vec, metric=metric)
+            d_mat = spatial.distance.pdist(feature_vec, metric=metric) # only need to calculate this once
             d_mat = spatial.distance.squareform(d_mat)
             # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
             d_mat *= p_reference
@@ -130,12 +127,11 @@ class GaussianKernel(KernelMixin):
             deltas[l] = 2 * self.weights[l] \
                         * ((1 / self.sigma) * sample_terms.sum() - self.reg)
 
-        
-
-    @staticmethod
-    def __scale_distances(distance_matrix):
-        mean_dist = (distance_matrix).sum() / (distance_matrix.shape[0] - 1)**2
-        return (distance_matrix - mean_dist)**2
+    def __scale_distances(self, distance_matrix):
+        mean_dists = np.sum(distance_matrix, axis=0)\
+                   / (distance_matrix.shape[0] - 1)
+        center_mat = np.ones((mean_dists.size, mean_dists.size)) * mean_dists
+        return distance_matrix - center_mat.T
 
 
 
@@ -257,9 +253,11 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
 
         # intialize kernel function
         if self.kernel == 'exponential':
-            kernel = ExponentialKernel(self.sigma, self.reg, self.coef_)
+            kernel = ExponentialKernel(self.sigma, self.reg, self.metric,
+                                       self.coef_)
         elif self.kernel == 'gaussian':
-            kernel = GaussianKernel(self.sigma, self.reg, self.coef_)
+            kernel = GaussianKernel(self.sigma, self.reg, self.metric,
+                                    self.coef_)
         else:
             raise ValueError('Unsupported kernel ' +
                              'function: {}'.format(self.kernel))
