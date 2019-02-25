@@ -59,6 +59,101 @@ def center_distances(distance_matrix):
     center_mat = np.ones((mean_dists.size, mean_dists.size)) * mean_dists
     return distance_matrix - center_mat.T
 
+class AdamOptimizer(object):
+    """
+    Gradient ascent/descent optimization via the Adam algorithm.
+    
+    References
+    ----------
+        Kingma, D. P., & Ba, J. (2014). Adam: A Method for Stochastic
+        Optimization. Retrieved from http://arxiv.org/abs/1412.6980
+    """
+    
+    def __init__(self, n_features, alpha=0.001, beta_1=0.9, beta_2=0.999,
+                 epsilon=10**(-8)):
+        """
+        Gradient ascent/descent optimization via Adam algorithm
+        
+        Parameters
+        ----------
+        n_features : int
+            Number of features to optimize.
+        alpha : float, optional
+            Initial step size. The default is 0.001.
+        beta_1 : float, optional
+            Exponential decay rate for first moment estimate. The default is
+            0.9.
+        beta_2 : float, optional
+            Exponential decay rate for second moment estimate. The default is
+            0.999.
+        epsilon : float, optional
+            Small value to act as pseudocount to avoid division by zeor. The
+            default is 10**(-8).
+
+        Attributes
+        ----------
+        t : int
+            Current time step.
+        first_moments : numpy.ndarray
+            Vector of estimated first moments.
+        second_moments : numpy.ndarray
+            Vector of estimated second moments.
+
+        Methods
+        -------
+        get_steps(gradients) : get gradient deltas for each feature gradient.
+
+        References
+        ----------
+        Kingma, D. P., & Ba, J. (2014). Adam: A Method for Stochastic
+        Optimization. Retrieved from http://arxiv.org/abs/1412.6980
+        """
+        self.t = 0
+        self.first_moments = np.zeros(n_features)
+        self.second_moments = np.zeros(n_features)
+        self.alpha = alpha
+        self.beta_1 = beta_1
+        self.beta_2 = beta_2
+        self.epsilon = epsilon
+
+    def get_steps(self, gradients, *args):
+        """
+        Calculate gradient deltas for each feature gradient.
+        
+        Parameters
+        ----------
+        gradients : numpy.ndarray
+            Calculated gradient delta of objective function with respect to
+            given feature.
+
+        Raises
+        ------
+        ValueError
+            Checks if `gradient` fits expected dimensions.
+        
+        Returns
+        -------
+        numpy.ndarray
+            Feature specific gradient steps for either ascent or descent.
+        """
+
+        
+        if self.first_moments.shape[0] != gradients.shape[0]:
+            raise ValueError("Expected gradient vector with length" +
+                             "{}. Got {}".format(self.first_moments.shape[0],
+                                                 gradients.shape[0]))
+        self.t += 1
+        self.first_moments = self.beta_1 * self.first_moments \
+                           + (1 - self.beta_1) * gradients
+        self.second_moments = self.beta_2 * self.second_moments \
+                            + (1 - self.beta_2) * gradients**2
+        alpha_t = self.alpha * np.sqrt(1 - self.beta_2**self.t) \
+                / (1 - self.beta_1**self.t)
+        steps = alpha_t * self.first_moments \
+              / (np.sqrt(self.second_moments)  + self.epsilon)
+        return steps 
+
+    
 class KernelMixin(object):
 
     def __init__(self, sigma, reg, weights):
@@ -133,7 +228,17 @@ class GaussianKernel(KernelMixin):
         return deltas
 
 
-class NCFS(base.BaseEstimator, base.TransformerMixin): 
+class NCFS(base.BaseEstimator, base.TransformerMixin):
+    """
+    Class to perform Neighborhood Component Feature Selection 
+
+    References
+    ----------
+
+    Yang, W., Wang, K., & Zuo, W. (2012). Neighborhood Component Feature
+    Selection for High-Dimensional Data. Journal of Computers, 7(1).
+    https://doi.org/10.4304/jcp.7.1.161-168
+    """
 
     def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
                  metric='sqeuclidean', kernel='exponential'):
