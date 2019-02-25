@@ -53,7 +53,7 @@ def center_distances(distance_matrix):
     np.ndarray
         A centered distance matrix where values are centered by row means. 
     """
-
+    # subtract row means from each d_ij value
     mean_dists = np.sum(distance_matrix, axis=1)\
                 / (distance_matrix.shape[0] - 1)
     center_mat = np.ones((mean_dists.size, mean_dists.size)) * mean_dists
@@ -70,20 +70,20 @@ class KernelMixin(object):
         return distance_matrix
 
     def gradient_deltas(self, p_reference, feature_distances, class_matrix):
-        deltas = np.zeros(feature_distances.shape[0], dtype=np.float64)
+        deltas = np.zeros(self.weights.size, dtype=np.float64)
         # calculate probability of correct classification
         # check class mat one hot shit
-        p_correct = np.sum(p_reference * class_matrix, axis=0)
+        p_correct = np.sum(p_reference * class_matrix, axis=1)
         # caclulate weight adjustments
-        for l in range(feature_distances.shape[0]):
+        for l in range(self.weights.size):
             # distance in feature l for all samples, d_ij
             d_mat = feature_distances[l]
             # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
             d_mat *= p_reference
             # calculate p_i * sum(D_ij), j from 0 to N
-            all_term = p_correct * d_mat.sum(axis=0)
+            all_term = p_correct * d_mat.sum(axis=1)
             # weighted in-class distances using adjacency matrix,
-            in_class_term = np.sum(d_mat * class_matrix, axis=0)
+            in_class_term = np.sum(d_mat * class_matrix, axis=1)
             sample_terms = all_term - in_class_term
             # calculate delta following gradient ascent 
             deltas[l] = 2 * self.weights[l] \
@@ -96,21 +96,41 @@ class KernelMixin(object):
 
 class ExponentialKernel(KernelMixin):
 
-    def __init__(self, sigma, reg, weights):
+    def __init__(self, sigma, reg, metric, weights):
+        self.metric = metric
         super(ExponentialKernel, self).__init__(sigma, reg, weights)
 
     def transform(self, distance_matrix):
         return np.exp(-1 * distance_matrix / self.sigma, dtype=np.float64)
 
+    def gradient_deltas(self, p_reference, data_matrix, class_matrix):
+        feature_dists = pairwise_feature_distance(data_matrix,
+                                                  metric='cityblock')
+        deltas = super(ExponentialKernel, self).gradient_deltas(p_reference,
+                                                                feature_dists,
+                                                                class_matrix)
+        return deltas
+
 
 class GaussianKernel(KernelMixin):
 
-    def __init__(self, sigma, reg, weights):
+    def __init__(self, sigma, reg, metric, weights):
+        self.metric = metric
         super(GaussianKernel, self).__init__(sigma, reg, weights)
 
     def transform(self, distance_matrix):
         centered = center_distances(distance_matrix)
         return np.exp(-1 * centered / self.sigma, dtype=np.float64)
+
+    def gradient_deltas(self, p_reference, data_matrix, class_matrix):
+        feature_dists = pairwise_feature_distance(data_matrix,
+                                                  metric='cityblock')
+        for l in range(feature_dists.shape[0]):
+            feature_dists[l] = center_distances(feature_dists[l])
+        deltas = super(GaussianKernel, self).gradient_deltas(p_reference,
+                                                             feature_dists,
+                                                             class_matrix)
+        return deltas
 
 
 class NCFS(base.BaseEstimator, base.TransformerMixin): 
@@ -224,7 +244,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                              'Got {}.'.format(type(y)))
         if y.shape[0] != X.shape[0]:
             raise ValueError('`X` and `y` must have the same row numbers.')
-        X= NCFS.__check_X(X)
+        X = NCFS.__check_X(X)
         n_samples, n_features = X.shape
         # initialize all weights as 1
         self.coef_ = np.ones(n_features, dtype=np.float64)
@@ -232,10 +252,12 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         # intialize kernel function, and assign expected feature distances 
         feature_distances = None
         if self.kernel == 'exponential':
-            kernel = ExponentialKernel(self.sigma, self.reg, self.coef_)
+            kernel = ExponentialKernel(self.sigma, self.reg, self.metric,
+                                       self.coef_)
             feature_distances = pairwise_feature_distance(X, metric=self.metric)
         elif self.kernel == 'gaussian':
-            kernel = GaussianKernel(self.sigma, self.reg, self.coef_)
+            kernel = GaussianKernel(self.sigma, self.reg, self.metric,
+                                       self.coef_)
             feature_distances = pairwise_feature_distance(X, metric=self.metric)
             for l in range(feature_distances.shape[0]):
                 feature_distances[l] = center_distances(feature_distances[l])
@@ -267,22 +289,21 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             p_reference[diag_idx] = 0
 
             # add pseudocount if necessary to avoid dividing by zero
-            p_i = p_reference.sum(axis=0)
-            n_zeros = sum(p_i == 0)
+            row_sums = p_reference.sum(axis=1)
+            n_zeros = sum(row_sums == 0)
             if n_zeros > 0:
                 print('Adding pseudocounts to distance matrix to avoid ' +
                       'dividing by zero.')
-                if n_zeros == len(p_i):
+                if n_zeros == len(row_sums):
                     pseudocount = np.exp(-20)
                 else:
-                    pseudocount = np.min(p_i)
-                p_i += pseudocount
-            scale_factors = 1 / (p_i)
-            p_reference = p_reference * scale_factors
+                    pseudocount = np.min(row_sums)
+                row_sums += pseudocount
+            scale_factors = 1 / (row_sums)
+            p_reference = (p_reference.T * scale_factors).T
 
             # caclulate weight adjustments
-            deltas = kernel.gradient_deltas(p_reference, feature_distances,
-                                            class_mat)
+            deltas = kernel.gradient_deltas(p_reference, X, class_mat)
                 
             # calculate objective function
             new_objective = (np.sum(p_reference * class_mat) \
@@ -391,7 +412,8 @@ def toy_dataset(n_features=1000):
 
 if __name__ == '__main__':
     X, y = toy_dataset()
-    f_select = NCFS(alpha=0.01, sigma=1, reg=1, eta=0.001, metric='cityblock')
+    f_select = NCFS(alpha=0.01, sigma=1, reg=1, eta=0.001, metric='cityblock',
+                    kernel='gaussian')
     f_select.fit(X, y)
     print(np.argsort(-f_select.coef_)[:10])
     print(f_select.coef_[0], f_select.coef_[100])
