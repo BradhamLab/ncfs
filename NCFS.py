@@ -81,7 +81,7 @@ class NCFSOptimizer(object):
         """
         self.alpha = alpha
 
-    def get_steps(self, gradients, loss, *args):
+    def get_steps(self, gradients, loss=None, *args):
         """
         Calculate gradient deltas for each feature gradient.
         
@@ -99,10 +99,11 @@ class NCFSOptimizer(object):
             Gradient steps for each feature gradient.
         """
         steps = self.alpha * gradients
-        if loss > 0:
-            self.alpha *= 1.01
-        else:
-            self.alpha *= 0.4
+        if loss is not None:
+            if loss > 0:
+                self.alpha *= 1.01
+            else:
+                self.alpha *= 0.4
         return steps
 
 
