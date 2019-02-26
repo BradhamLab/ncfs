@@ -59,6 +59,53 @@ def center_distances(distance_matrix):
     center_mat = np.ones((mean_dists.size, mean_dists.size)) * mean_dists
     return distance_matrix - center_mat.T
 
+class NCFSOptimizer(object):
+    """Gradient ascent/descent optimization following NCFS protocol."""
+
+    def __init__(self, alpha=0.01):
+        """
+        Gradient ascent/descent optimization following NCFS protocol.
+        
+        Parameters
+        ----------
+        alpha : float, optional
+            Initial step size. The default is 0.01.
+
+        Attributes
+        ----------
+        alpha
+
+        Methods
+        -------
+        get_steps(gradients) : get gradient deltas for each feature gradient.
+        """
+        self.alpha = alpha
+
+    def get_steps(self, gradients, loss, *args):
+        """
+        Calculate gradient deltas for each feature gradient.
+        
+        Parameters
+        ----------
+        gradients : numpy.ndarray
+            Calculated gradient delta of objective function with respect to
+            given feature.
+        loss : float
+            Difference between objective function at t and t - 1.
+        
+        Returns
+        -------
+        numpy.ndarray
+            Gradient steps for each feature gradient.
+        """
+        steps = self.alpha * gradients
+        if loss > 0:
+            self.alpha *= 1.01
+        else:
+            self.alpha *= 0.4
+        return steps
+
+
 class AdamOptimizer(object):
     """
     Gradient ascent/descent optimization via the Adam algorithm.
@@ -98,6 +145,10 @@ class AdamOptimizer(object):
             Vector of estimated first moments.
         second_moments : numpy.ndarray
             Vector of estimated second moments.
+        alpha : float
+        beta_1 : float
+        beta_2 : float
+        epsilon : float
 
         Methods
         -------
@@ -135,9 +186,7 @@ class AdamOptimizer(object):
         -------
         numpy.ndarray
             Feature specific gradient steps for either ascent or descent.
-        """
-
-        
+        """        
         if self.first_moments.shape[0] != gradients.shape[0]:
             raise ValueError("Expected gradient vector with length" +
                              "{}. Got {}".format(self.first_moments.shape[0],
@@ -241,7 +290,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
     """
 
     def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
-                 metric='sqeuclidean', kernel='exponential'):
+                 metric='sqeuclidean', kernel='exponential', solver='ncfs'):
         """
         Class to perform Neighborhood Component Feature Selection 
 
@@ -262,8 +311,12 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             implemented distance and accept a parameter 'w' for a weighted
             distance. Default is the squared euclidean distance.
         kernel : str, optional
-            Method to calculate kerel distance between samples. Default is 
-            'exponential', as used in the original NCFS paper.
+            Method to calculate kernel distance between samples. Possible values
+            are 'exponential' and 'gaussian'. The default is 'exponential', as
+            used in the original NCFS paper.
+        solver : str, optional
+            Method to perform gradient ascent. Possible values are 'ncfs' and
+            'adam'. The defautl in 'ncfs', as used in the original NCFS paper.
 
         Attributes:
         ----------
@@ -278,6 +331,10 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             objective function scores after each iteration.
         metric : str
             Distance metric to use.
+        kernel : str
+            Kernel function to use to calculate kernel distance.
+        solver : str
+            Method to use to perform gradient ascent.
         coef_ : numpy.array
             Feature weights. Unimportant features tend toward zero.
         score_ : float
@@ -302,6 +359,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.eta = eta 
         self.metric = metric
         self.kernel = kernel
+        self.solver = solver
         self.coef_ = None
         self.score_ = None
 
@@ -370,8 +428,13 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             raise ValueError('Unsupported kernel ' +
                              'function: {}'.format(self.kernel))
 
-        # get initial step size
-        step_size = self.alpha 
+        if self.solver == 'ncfs':
+            solver = NCFSOptimizer(alpha=self.alpha)
+        elif self.solver == 'adam':
+            solver = AdamOptimizer(n_features)
+        else:
+            raise ValueError('Unsupported gradient ascent method ' +
+                             '{}'.format(self.solver))
         # construct adjacency matrix of class membership for matrix mult. 
         class_mat = np.zeros((n_samples, n_samples), np.float64)
         for i in range(n_samples):
@@ -382,6 +445,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         past_objective, loss = 0, np.inf
         diag_idx = np.diag_indices(n_samples, 2)
         feature_distances = pairwise_feature_distance(X, metric=self.metric)
+        
         while abs(loss) > self.eta:
             # calculate D_w(x_i, x_j): w^2 * |x_i - x_j] for all i,j
             distances = spatial.distance.pdist(X, metric=self.metric,
@@ -408,7 +472,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             p_reference = (p_reference.T * scale_factors).T
 
             # caclulate weight adjustments
-            deltas = kernel.gradient_deltas(p_reference, X, class_mat)
+            gradients = kernel.gradient_deltas(p_reference, X, class_mat)
                 
             # calculate objective function
             new_objective = (np.sum(p_reference * class_mat) \
@@ -416,14 +480,13 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             # calculate loss from previous objective function
             loss = new_objective - past_objective
             # update weights
-            self.coef_ = self.coef_ + step_size * deltas
+            deltas = solver.get_steps(gradients, loss)
+            self.coef_ = self.coef_ + deltas
             kernel.update_weights(self.coef_)
             # reset objective score for new iteration
             past_objective = new_objective
-            if loss > 0:
-                step_size *= 1.01
-            else:
-                step_size *= 0.4
+
+
         self.score_ = past_objective
         return self
 
@@ -517,8 +580,8 @@ def toy_dataset(n_features=1000):
 
 if __name__ == '__main__':
     X, y = toy_dataset()
-    f_select = NCFS(alpha=0.01, sigma=1, reg=1, eta=0.001, metric='cityblock',
-                    kernel='gaussian')
+    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='cityblock',
+                    kernel='gaussian', solver='adam')
     f_select.fit(X, y)
     print(np.argsort(-f_select.coef_)[:10])
     print(f_select.coef_[0], f_select.coef_[100])
