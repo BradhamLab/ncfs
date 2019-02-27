@@ -10,7 +10,7 @@ Author : Dakota Hawkins
 
 import numpy as np
 from scipy import spatial
-from sklearn import base
+from sklearn import base, model_selection
 
 def pairwise_feature_distance(data_matrix, metric='seuclidean'):
     """
@@ -35,8 +35,8 @@ def pairwise_feature_distance(data_matrix, metric='seuclidean'):
                         data_matrix.shape[0], data_matrix.shape[0]))
     for j in range(data_matrix.shape[1]):
         dists[j] = spatial.distance.squareform(
-                        spatial.distance.pdist(X[:, j].reshape(-1, 1),
-                                                metric=metric))
+                        spatial.distance.pdist(data_matrix[:, j].reshape(-1, 1),
+                                               metric=metric))
     return dists
 
 def center_distances(distance_matrix):
@@ -249,10 +249,9 @@ class ExponentialKernel(KernelMixin):
         return np.exp(-1 * distance_matrix / self.sigma, dtype=np.float64)
 
     def gradient_deltas(self, p_reference, data_matrix, class_matrix):
-        feature_dists = pairwise_feature_distance(data_matrix,
-                                                  metric='cityblock')
+        f_dists = pairwise_feature_distance(data_matrix, metric=self.metric)
         deltas = super(ExponentialKernel, self).gradient_deltas(p_reference,
-                                                                feature_dists,
+                                                                f_dists,
                                                                 class_matrix)
         return deltas
 
@@ -267,13 +266,12 @@ class GaussianKernel(KernelMixin):
         centered = center_distances(distance_matrix)
         return np.exp(-1 * centered / self.sigma, dtype=np.float64)
 
-    def gradient_deltas(self, p_reference, data_matrix, class_matrix):
-        feature_dists = pairwise_feature_distance(data_matrix,
-                                                  metric='cityblock')
-        for l in range(feature_dists.shape[0]):
-            feature_dists[l] = center_distances(feature_dists[l])
+    def gradient_deltas(self, p_reference, data_matrix, class_matrix, metric):
+        f_dists = pairwise_feature_distance(data_matrix, metric=self.metric)
+        for l in range(f_dists.shape[0]):
+            f_dists[l] = center_distances(f_dists[l])
         deltas = super(GaussianKernel, self).gradient_deltas(p_reference,
-                                                             feature_dists,
+                                                             f_dists,
                                                              class_matrix)
         return deltas
 
@@ -291,7 +289,8 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
     """
 
     def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
-                 metric='sqeuclidean', kernel='exponential', solver='ncfs'):
+                 metric='sqeuclidean', kernel='exponential', solver='ncfs',
+                 stochastic=False):
         """
         Class to perform Neighborhood Component Feature Selection 
 
@@ -318,6 +317,11 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         solver : str, optional
             Method to perform gradient ascent. Possible values are 'ncfs' and
             'adam'. The defautl in 'ncfs', as used in the original NCFS paper.
+        stochastic : boolean, optional
+            Whether gradient ascent should be stochastic. Stochastic gradient
+            ascent implies breaking the data set into 3 stratified partions and
+            using each partition to update weights independently. Default is 
+            False, and weight adjustment is done on the entire data matrix.
 
         Attributes:
         ----------
@@ -336,6 +340,8 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             Kernel function to use to calculate kernel distance.
         solver : str
             Method to use to perform gradient ascent.
+        stochastic : boolean
+            Whether gradient ascent should be stochastic or determinent.
         coef_ : numpy.array
             Feature weights. Unimportant features tend toward zero.
         score_ : float
@@ -361,6 +367,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.metric = metric
         self.kernel = kernel
         self.solver = solver
+        self.stochastic = stochastic
         self.coef_ = None
         self.score_ = None
 
@@ -440,18 +447,54 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         class_matrix = np.zeros((n_samples, n_samples), np.float64)
         for i in range(n_samples):
             for j in range(n_samples):
-                if y[i] == y[j]:
+                if y[i] == y[j] and i != j:
                     class_matrix[i, j] = 1
 
         objective, loss = 0, np.inf
-        feature_distances = pairwise_feature_distance(X, metric=self.metric)
-        
+        import matplotlib.pyplot as plt
+        plt.style.use('/home/dakota/PythonModules/downstream/src/visualization/dakota.mplstyle') 
+        ax = plt.gca()
+        iters = []
+        scores = []
+        max_score = -np.inf
+        min_score = np.inf
         while abs(loss) > self.eta:
-            new_objective = self.__fit(X, class_matrix, objective)
+            if self.stochastic:
+                folds = model_selection.StratifiedKFold(n_splits=3,
+                                                        shuffle=True)
+                new_objective = objective
+                for train_idxs, __ in folds.split(X, y):
+                    random_X = X[train_idxs, :]
+                    random_C = class_matrix[train_idxs, :][:, train_idxs]
+                    new_objective = self.__fit(random_X, random_C,
+                                               new_objective)
+                    if True:
+                        if new_objective > max_score:
+                            max_score = new_objective
+                        if new_objective < min_score:
+                            min_score = new_objective
+                        if len(iters) == 0:
+                            iters.append(1)
+                            scores.append(new_objective)
+                            line, = ax.plot(iters, scores)
+                        else:
+                            iters.append(iters[-1] + 1)
+                            scores.append(new_objective)
+                            ax.set_xlim(iters[0], iters[-1])
+                            ax.set_ylim(min_score, max_score)
+                            line.set_xdata(iters)
+                            line.set_ydata(scores)
+                            plt.draw()
+                            plt.pause(1e-20)   
+
+            else:
+                new_objective = self.__fit(X, class_matrix, objective)
             loss = objective - new_objective
             objective = new_objective
 
         self.score_ = objective
+        plt.show()
+        np.savetxt('stochastic_ncfs.log', np.hstack((iters, scores)))
         return self
 
     def transform(self, X):
@@ -509,7 +552,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         """
         # calculate D_w(x_i, x_j): w^2 * |x_i - x_j] for all i,j
         distances = spatial.distance.pdist(X, metric=self.metric,
-                                            w=np.power(self.coef_, 2))
+                                           w=np.power(self.coef_, 2))
         # organize as distance matrix
         distances = spatial.distance.squareform(distances)
         # calculate K(D_w(x_i, x_j)) for all i, j pairs
@@ -600,10 +643,15 @@ def toy_dataset(n_features=1000):
     x_std = (data - data.min(axis=0)) / (data.max(axis=0) - data.min(axis=0))
     return x_std, classes
 
-if __name__ == '__main__':
+def main():
     X, y = toy_dataset()
+    old_X = np.copy(X)
+    old_fdists = pairwise_feature_distance(old_X, metric='cityblock')
     f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='cityblock',
-                    kernel='exponential', solver='ncfs')
+                    kernel='exponential', solver='adam', stochastic=True)
     f_select.fit(X, y)
     print(np.argsort(-f_select.coef_)[:10])
     print(f_select.coef_[0], f_select.coef_[100])
+
+if __name__ == '__main__':
+    main()
