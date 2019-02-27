@@ -468,6 +468,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                     random_C = class_matrix[train_idxs, :][:, train_idxs]
                     new_objective = self.__fit(random_X, random_C,
                                                new_objective)
+                    self.solver_.t -= 1 # hack, don't add until full iter                          
                     if True:
                         if new_objective > max_score:
                             max_score = new_objective
@@ -491,10 +492,12 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                 new_objective = self.__fit(X, class_matrix, objective)
             loss = objective - new_objective
             objective = new_objective
+            self.solver_.t += 1
 
-        self.score_ = objective
-        plt.show()
+        self.score_ = self.__fit(X, class_matrix, new_objective)
+        print("Score over dataset: {}".format(self.score_))
         np.savetxt('stochastic_ncfs.log', np.hstack((iters, scores)))
+        plt.show()
         return self
 
     def transform(self, X):
