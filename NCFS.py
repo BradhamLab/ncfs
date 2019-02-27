@@ -221,10 +221,8 @@ class KernelMixin(object):
         p_correct = np.sum(p_reference * class_matrix, axis=1)
         # caclulate weight adjustments
         for l in range(self.weights.size):
-            # distance in feature l for all samples, d_ij
-            d_mat = feature_distances[l]
             # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
-            d_mat *= p_reference
+            d_mat = feature_distances[l] * p_reference
             # calculate p_i * sum(D_ij), j from 0 to N
             all_term = p_correct * d_mat.sum(axis=1)
             # weighted in-class distances using adjacency matrix,
