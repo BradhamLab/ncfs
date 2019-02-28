@@ -514,8 +514,9 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
 
         Returns
         -------
-        Fitted NCFS object with weights stored in the `.coef_` instance
-        variable.
+        NCFS
+            Fitted NCFS object with weights stored in the `.coef_` instance
+            variable.
         """
         if not 0 < self.alpha < 1:
             raise ValueError("Alpha value should be between 0 and 1.")
