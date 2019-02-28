@@ -205,21 +205,71 @@ class AdamOptimizer(object):
 
     
 class KernelMixin(object):
+    """Base class for kernel functions."""
 
     def __init__(self, sigma, reg, weights):
+        """
+        Base class for kernel functions.
+
+        Parameters
+        ----------
+        sigma : float
+            Scaling parameter sigma as mentioned in original paper.
+        reg : float
+            Regularization parameter.
+        weights : numpy.ndarray
+            Initial vector of feature weights.
+
+        Methods
+        -------
+        transform():
+            Apply the kernel tranformation to a distance matrix.
+
+        gradients():
+            Get current gradients for each feature
+        update_weights():
+            Update feature weights to a new value.
+        """
         self.sigma = sigma
         self.reg = reg
         self.weights = weights
 
     def transform(self, distance_matrix):
+        """Apply a kernel transformation to a distance matrix."""
         return distance_matrix
 
-    def gradient_deltas(self, p_reference, feature_distances, class_matrix):
+    def gradients(self, p_reference, feature_distances, class_matrix):
+        """
+        Calculate gradients with respect to feature weights.
+
+        Calculates the gradient vector of the objective function with respect
+        to feature weights. Objective function is the same outlined in the
+        original NCFS paper.
+        
+        Parameters
+        ----------
+        p_reference : numpy.ndarray
+            A (sample x sample) probability matrix with p_ij represents the
+            probability of selecting sample j as a reference for sample i.
+        feature_distances : numpy.ndarray
+            A (feature x sample x sample) tensor, holding per feature sample
+            distances, such that [l, i, j] indexes the distance between
+            sample i and j in feature l.
+        class_matrix : numpy.ndarray
+            A one-hot (sample x sample) matrix where c_ij = 1 indicates sample
+            i and sample j are in the same class, and c_ij = 0 otherwise.
+        
+        Returns
+        -------
+        numpy.ndarray
+            Gradient vector for each feature with respect to the objective
+            function.
+        """
         deltas = np.zeros(self.weights.size, dtype=np.float64)
         # calculate probability of correct classification
         # check class mat one hot shit
         p_correct = np.sum(p_reference * class_matrix, axis=1)
-        # caclulate weight adjustments
+        # caclulate weight adjustments for each feature
         for l in range(self.weights.size):
             # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
             d_mat = feature_distances[l] * p_reference
@@ -234,44 +284,112 @@ class KernelMixin(object):
         return deltas
 
     def update_weights(self, new_weights):
+        """
+        Update feature weights.
+        
+        Parameters
+        ----------
+        new_weights : numpy.ndarray
+            New feature weights.
+        """
         self.weights = new_weights
 
 
 class ExponentialKernel(KernelMixin):
+    """Class for the exponential kernel function used in original NCFS paper."""
 
-    def __init__(self, sigma, reg, metric, weights):
-        self.metric = metric
+    def __init__(self, sigma, reg, weights):
+        """
+        Class for the exponential kernel function used in original NCFS paper.
+
+        Extends KernelMixin.
+
+        Parameters
+        ----------
+        sigma : float
+            Scaling parameter sigma as mentioned in original paper.
+        reg : float
+            Regularization parameter.
+        weights : numpy.ndarray
+            Initial vector of feature weights.
+
+        Methods
+        -------
+        transform():
+            Apply the kernel tranformation to a distance matrix.
+
+        gradients():
+            Get current gradients for each feature
+        update_weights():
+            Update feature weights to a new value.
+        """
         super(ExponentialKernel, self).__init__(sigma, reg, weights)
 
     def transform(self, distance_matrix):
+        """
+        Apply the kernel function to each sample distance in a distance matrix.
+        
+        Parameters
+        ----------
+        distance_matrix : numpy.ndarray
+            A (sample x sample) distance matrix.
+        
+        Returns
+        -------
+        numpy.ndarray
+            A (sampel x sample) kernel distance matrix.
+        """
         return np.exp(-1 * distance_matrix / self.sigma, dtype=np.float64)
-
-    def gradient_deltas(self, p_reference, data_matrix, class_matrix):
-        f_dists = pairwise_feature_distance(data_matrix, metric=self.metric)
-        deltas = super(ExponentialKernel, self).gradient_deltas(p_reference,
-                                                                f_dists,
-                                                                class_matrix)
-        return deltas
 
 
 class GaussianKernel(KernelMixin):
 
-    def __init__(self, sigma, reg, metric, weights):
-        self.metric = metric
+    def __init__(self, sigma, reg, weights):
+        """
+        Class for sample-centered distance kernel function.
+
+        The distance between samples i and j, d_ij, is centered by subtracting
+        the average distance between sample i and all other samples.
+
+        Extends KernelMixin.
+
+        Parameters
+        ----------
+        sigma : float
+            Scaling parameter sigma as mentioned in original paper.
+        reg : float
+            Regularization parameter.
+        weights : numpy.ndarray
+            Initial vector of feature weights.
+
+        Methods
+        -------
+        transform():
+            Apply the kernel tranformation to a distance matrix.
+
+        gradients():
+            Get current gradients for each feature
+        update_weights():
+            Update feature weights to a new value.
+        """
         super(GaussianKernel, self).__init__(sigma, reg, weights)
 
     def transform(self, distance_matrix):
+        """
+        Apply the kernel function to each sample distance in a distance matrix.
+        
+        Parameters
+        ----------
+        distance_matrix : numpy.ndarray
+            A (sample x sample) distance matrix.
+        
+        Returns
+        -------
+        numpy.ndarray
+            A (sampel x sample) kernel distance matrix.
+        """
         centered = center_distances(distance_matrix)
         return np.exp(-1 * centered / self.sigma, dtype=np.float64)
-
-    def gradient_deltas(self, p_reference, data_matrix, class_matrix, metric):
-        f_dists = pairwise_feature_distance(data_matrix, metric=self.metric)
-        for l in range(f_dists.shape[0]):
-            f_dists[l] = center_distances(f_dists[l])
-        deltas = super(GaussianKernel, self).gradient_deltas(p_reference,
-                                                             f_dists,
-                                                             class_matrix)
-        return deltas
 
 
 class NCFS(base.BaseEstimator, base.TransformerMixin):
@@ -353,7 +471,6 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
 
         References
         ----------
-
         Yang, W., Wang, K., & Zuo, W. (2012). Neighborhood Component Feature
         Selection for High-Dimensional Data. Journal of Computers, 7(1).
         https://doi.org/10.4304/jcp.7.1.161-168
@@ -421,12 +538,10 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         # intialize kernel function, and assign expected feature distances 
         feature_distances = None
         if self.kernel == 'exponential':
-            self.kernel_ = ExponentialKernel(self.sigma, self.reg, self.metric,
-                                       self.coef_)
+            self.kernel_ = ExponentialKernel(self.sigma, self.reg, self.coef_)
             feature_distances = pairwise_feature_distance(X, metric=self.metric)
         elif self.kernel == 'gaussian':
-            self.kernel_ = GaussianKernel(self.sigma, self.reg, self.metric,
-                                       self.coef_)
+            self.kernel_ = GaussianKernel(self.sigma, self.reg, self.coef_)
             feature_distances = pairwise_feature_distance(X, metric=self.metric)
             for l in range(feature_distances.shape[0]):
                 feature_distances[l] = center_distances(feature_distances[l])
@@ -435,6 +550,10 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                              'function: {}'.format(self.kernel))
 
         if self.solver == 'ncfs':
+            if self.stochastic:
+                Warning("Converge with stochastic gradient ascent via NCFS "
+                        "line search not guaranteed. It's recommended to use "
+                        "'Adam' instead.")
             self.solver_ = NCFSOptimizer(alpha=self.alpha)
         elif self.solver == 'adam':
             self.solver_ = AdamOptimizer(n_features)
@@ -449,13 +568,6 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                     class_matrix[i, j] = 1
 
         objective, loss = 0, np.inf
-        import matplotlib.pyplot as plt
-        plt.style.use('/home/dakota/PythonModules/downstream/src/visualization/dakota.mplstyle') 
-        ax = plt.gca()
-        iters = []
-        scores = []
-        max_score = -np.inf
-        min_score = np.inf
         while abs(loss) > self.eta:
             if self.stochastic:
                 folds = model_selection.StratifiedKFold(n_splits=3,
@@ -464,38 +576,17 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                 for train_idxs, __ in folds.split(X, y):
                     random_X = X[train_idxs, :]
                     random_C = class_matrix[train_idxs, :][:, train_idxs]
+                    random_F = feature_distances[:, train_idxs, :][:, :,
+                                                                   train_idxs]
                     new_objective = self.__fit(random_X, random_C,
-                                               new_objective)
-                    self.solver_.t -= 1 # hack, don't add until full iter                          
-                    if True:
-                        if new_objective > max_score:
-                            max_score = new_objective
-                        if new_objective < min_score:
-                            min_score = new_objective
-                        if len(iters) == 0:
-                            iters.append(1)
-                            scores.append(new_objective)
-                            line, = ax.plot(iters, scores)
-                        else:
-                            iters.append(iters[-1] + 1)
-                            scores.append(new_objective)
-                            ax.set_xlim(iters[0], iters[-1])
-                            ax.set_ylim(min_score, max_score)
-                            line.set_xdata(iters)
-                            line.set_ydata(scores)
-                            plt.draw()
-                            plt.pause(1e-20)   
-
+                                               new_objective, random_F)
             else:
-                new_objective = self.__fit(X, class_matrix, objective)
+                new_objective = self.__fit(X, class_matrix, objective,
+                                           feature_distances)
             loss = objective - new_objective
             objective = new_objective
-            self.solver_.t += 1
 
-        self.score_ = self.__fit(X, class_matrix, new_objective)
-        print("Score over dataset: {}".format(self.score_))
-        np.savetxt('stochastic_ncfs.log', np.hstack((iters, scores)))
-        plt.show()
+        self.score_ = objective
         return self
 
     def transform(self, X):
@@ -533,7 +624,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         NCFS.__check_X(X)
         return X*self.coef_
 
-    def __fit(self, X, class_matrix, objective):
+    def __fit(self, X, class_matrix, objective, feature_distances):
         """
         Underlying method to fit NCFS model.
         
@@ -577,7 +668,8 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         p_reference = (p_reference.T * scale_factors).T
 
         # caclulate weight adjustments
-        gradients = self.kernel_.gradient_deltas(p_reference, X, class_matrix)
+        gradients = self.kernel_.gradients(p_reference, feature_distances,
+                                                 class_matrix)
             
         # calculate objective function
         new_objective = (np.sum(p_reference * class_matrix) \
@@ -646,11 +738,13 @@ def toy_dataset(n_features=1000):
 
 def main():
     X, y = toy_dataset()
-    old_X = np.copy(X)
-    old_fdists = pairwise_feature_distance(old_X, metric='cityblock')
     f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='cityblock',
                     kernel='exponential', solver='adam', stochastic=True)
+    from timeit import default_timer as timer
+    start = timer()
     f_select.fit(X, y)
+    end = timer()
+    print("Execution time in seconds: {}".format(end - start))
     print(np.argsort(-f_select.coef_)[:10])
     print(f_select.coef_[0], f_select.coef_[100])
 
