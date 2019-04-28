@@ -12,7 +12,7 @@ import numpy as np
 from scipy import spatial
 from sklearn import base
 
-def pairwise_distance(data_matrix, metric='euclidean'):
+def pairwise_feature_distance(data_matrix, metric='euclidean'):
     """
     Calculate the pairwise distance between each sample in each feature.
     
@@ -75,8 +75,8 @@ class ExponentialKernel(KernelMixin):
 
         # calculate unweighted, pairwise distance between all samples
         # in all features
-        feature_distances = pairwise_distance(data_matrix, metric=self.metric)
-
+        feature_distances = pairwise_feature_distance(data_matrix,
+                                                      metric=self.metric)
         # caclulate weight adjustments
         for l in range(data_matrix.shape[1]):
             # distance matrix between all samples in feature l
@@ -109,13 +109,16 @@ class GaussianKernel(KernelMixin):
         # calculate probability of correct classification
         # check class mat one hot shit
         p_correct = np.sum(p_reference * class_matrix, axis=0)
+        #calculate pairwise distances in each feature
+        feature_distances = pairwise_feature_distance(data_matrix,
+                                                      metric=self.metric)
+
         # caclulate weight adjustments
         for l in range(data_matrix.shape[1]):
             # values for feature l starting with sample 0 to N
             feature_vec = data_matrix[:, l].reshape(-1, 1)
             # distance in feature l for all samples, d_ij
-            d_mat = spatial.distance.pdist(feature_vec, metric=metric) # only need to calculate this once
-            d_mat = spatial.distance.squareform(d_mat)
+            d_mat = feature_distances[l]
             # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
             d_mat *= p_reference
             # calculate p_i * sum(D_ij), j from 0 to N
