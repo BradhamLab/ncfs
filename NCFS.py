@@ -405,7 +405,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
     """
 
     def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
-                 metric='sqeuclidean', kernel='exponential', solver='ncfs',
+                 metric='euclidean', kernel='gaussian', solver='ncfs',
                  stochastic=False):
         """
         Class to perform Neighborhood Component Feature Selection 
@@ -425,11 +425,11 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         metric : str, optional
             Metric to calculate distances between samples. Must be a scipy
             implemented distance and accept a parameter 'w' for a weighted
-            distance. Default is the squared euclidean distance.
+            distance. Default is the euclidean distance.
         kernel : str, optional
             Method to calculate kernel distance between samples. Possible values
-            are 'exponential' and 'gaussian'. The default is 'exponential', as
-            used in the original NCFS paper.
+            are 'exponential' and 'gaussian'. The default is 'gaussian', whereas
+            'exponential' follows the implementation in the original NCFS paper.
         solver : str, optional
             Method to perform gradient ascent. Possible values are 'ncfs' and
             'adam'. The defautl in 'ncfs', as used in the original NCFS paper.
@@ -531,7 +531,6 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                              'Got {}.'.format(type(y)))
         if y.shape[0] != X.shape[0]:
             raise ValueError('`X` and `y` must have the same row numbers.')
-        X = NCFS.__check_X(X)
         n_samples, n_features = X.shape
         # initialize all weights as 1
         self.coef_ = np.ones(n_features, dtype=np.float64)
@@ -539,9 +538,11 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         # intialize kernel function, and assign expected feature distances 
         feature_distances = None
         if self.kernel == 'exponential':
+            X = NCFS.__check_X(X)
             self.kernel_ = ExponentialKernel(self.sigma, self.reg, self.coef_)
             feature_distances = pairwise_feature_distance(X, metric=self.metric)
         elif self.kernel == 'gaussian':
+            X = X.astype(np.float64)
             self.kernel_ = GaussianKernel(self.sigma, self.reg, self.coef_)
             feature_distances = pairwise_feature_distance(X, metric=self.metric)
             for l in range(feature_distances.shape[0]):
@@ -622,8 +623,9 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         if X.shape[1] != len(self.coef_):
             raise ValueError('Expected data matrix `X` to contain the same' + 
                              'number of features as learnt feature weights.')
-        NCFS.__check_X(X)
-        return X*self.coef_
+        if self.kernel == 'exponential':
+            X = NCFS.__check_X(X)
+        return X * self.coef_
 
     def __fit(self, X, class_matrix, objective, feature_distances):
         """
@@ -746,7 +748,7 @@ def main():
     f_select.fit(X, y)
     end = timer()
     print("Execution time in seconds: {}".format(end - start))
-    print(np.argsort(-f_select.coef_)[:10])
+    print(np.argsort(-1 * f_select.coef_)[:10])
     print(f_select.coef_[0], f_select.coef_[100])
 
 if __name__ == '__main__':

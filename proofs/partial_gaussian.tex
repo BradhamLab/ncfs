@@ -36,8 +36,12 @@
     \end{equation}
     \begin{equation} \label{pij}
         p_{ij} = \dfrac{K(\bar D_{\vec w}(x_i, x_j, \bar d))}{\sum
-                 \limits_{k != i}^N K(\bar D_{\vec w}(x_i, x_k, \bar d))}
+                 \limits_{k \neq i}^N K(\bar D_{\vec w}(x_i, x_k, \bar d))}
     \end{equation}
+    \begin{equation} \label{pi}
+        p_{i} = \sum \limits_{j = 1}^{N} y_{ij} p_{ij}
+    \end{equation}
+
     \begin{equation} \label{d_l}
         \bar d_l = \dfrac{\sum \limits_{k \neq i}^N (x_{il} - x_{kl})^2}
                          {(N - 1)} 
@@ -57,6 +61,8 @@
         \item Equation \ref{k.dist} is the kernel distance between samples.
         \item Equation \ref{pij} describes the probability of selecting
             sample $j$.
+        \item Equation \ref{pi} is the probability of sample $i$ being correctly
+            classified.
         \item Equation \ref{d_l} is the average distance between samples $i$
             and $j$ in feature $l$.
         \item Equation \ref{obj} is the objective function we wish to
@@ -189,10 +195,67 @@
             \sum \limits_i^N \sum \limits_{j \neq i}^N y_{ij}
                 \frac{\partial}{\partial w_l}  p_{ij}
             - \lambda \sum \limits_l^M \frac{\partial}{\partial w_l} w_l^2 \\
-        \frac{\partial \upxi(\vec w)}{\partial w_l}
         &=
             \sum \limits_i^N \sum \limits_{j \neq i}^N y_{ij}
-            \frac{\partial}{\partial w_l}  p_{ij} - 2 \lambda w_l \\
+            \frac{\partial p_{ij}}{\partial w_l} - 2 \lambda w_l \\
+        &= 
+            \sum \limits_i^N \sum \limits_{j \neq i}^N y_{ij}
+            \left [
+            \frac{2 w_l p_{ij}}{\sigma}
+            \left (
+                \sum \limits_{k \neq i}^N
+                \left [ \left ( (x_{il} - x_{kl})^2 - \bar d_l \right ) p_{ik}
+                \right ] -
+                \left ( (x_{il} - x_{jl})^2 - \bar d_l \right )
+            \right ) 
+            \right ] - 2 \lambda w_l \\
+        &= 
+            \frac{2 w_l}{\sigma}
+            \left [
+            \sum \limits_i^N \sum \limits_{j \neq i}^N y_{ij}
+            \left (
+                p_{ij}
+                \sum \limits_{k \neq i}^N
+                \left [ \left ( (x_{il} - x_{kl})^2 - \bar d_l \right ) p_{ik}
+                \right ] -
+                \left ( (x_{il} - x_{jl})^2 - \bar d_l \right )
+            \right )
+            \right ] - 2 \lambda w_l \\
+        &= 
+            \frac{2 w_l}{\sigma}
+            \left [
+            \sum \limits_i^N \sum \limits_{j \neq i}^N y_{ij}
+                p_{ij}
+                \sum \limits_{k \neq i}^N
+                \left [ \left ( (x_{il} - x_{kl})^2 - \bar d_l \right ) p_{ik}
+                \right ] -
+            \sum \limits_{j \neq i}^N y_{ij} p_{ij} 
+                \left ( (x_{il} - x_{jl})^2 - \bar d_l \right )
+            \right ] - 2 \lambda w_l \\
+        &= 
+            \frac{2 w_l}{\sigma}
+            \left [
+            \sum \limits_i^N 
+                p_i
+                \sum \limits_{k \neq i}^N
+                \left [ \left ( (x_{il} - x_{kl})^2 - \bar d_l \right ) p_{ik}
+                \right ] -
+            \sum \limits_{j \neq i}^N y_{ij} p_{ij}
+                \left ( (x_{il} - x_{jl})^2 - \bar d_l \right )
+            \right ] - 2 \lambda w_l \\
+        \frac{\partial \upxi(\vec w)}{\partial w_l}
+        &= 
+            2 w_l \left (
+            \frac{1}{\sigma}
+            \left [
+            \sum \limits_i^N 
+                p_i
+                \sum \limits_{k \neq i}^N
+                \left [ \left ( (x_{il} - x_{kl})^2 - \bar d_l \right ) p_{ik}
+                \right ] -
+            \sum \limits_{j \neq i}^N y_{ij} p_{ij}
+                \left ( (x_{il} - x_{jl})^2 - \bar d_l \right )
+            \right ] - \lambda \right )\\
     \end{align*}
 \end{section}
 
