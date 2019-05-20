@@ -405,7 +405,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
     """
 
     def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
-                 metric='sqeuclidean', kernel='exponential', solver='ncfs',
+                 metric='euclidean', kernel='gaussian', solver='ncfs',
                  stochastic=False):
         """
         Class to perform Neighborhood Component Feature Selection 
@@ -425,11 +425,11 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         metric : str, optional
             Metric to calculate distances between samples. Must be a scipy
             implemented distance and accept a parameter 'w' for a weighted
-            distance. Default is the squared euclidean distance.
+            distance. Default is the euclidean distance.
         kernel : str, optional
             Method to calculate kernel distance between samples. Possible values
-            are 'exponential' and 'gaussian'. The default is 'exponential', as
-            used in the original NCFS paper.
+            are 'exponential' and 'gaussian'. The default is 'gaussian', whereas
+            'exponential' follows the implementation in the original NCFS paper.
         solver : str, optional
             Method to perform gradient ascent. Possible values are 'ncfs' and
             'adam'. The defautl in 'ncfs', as used in the original NCFS paper.
