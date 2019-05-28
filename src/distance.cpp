@@ -54,14 +54,10 @@ xt::xarray<double> pdist(xt::xarray<double> X, std::string metric,
     xt::xarray<double> mat = xt::zeros<double>({X.shape(0), X.shape(0)});
     // diagnol in distance matrix should be zero, don't calculate.
     // distance matrix is symmetric, calculate upper triangle only
-    std::cout << X << std::endl;
     for (int i=0; i < X.shape(0); i++) {
         for (int j=i + 1; j < X.shape(0); j++) {
-            std::cout << "i=" << i << ',' << "j=" << j << std::endl;
             auto x1 = xt::view(X, i);
             auto x2 = xt::view(X, j);
-            std::cout << x1 << std::endl;
-            std::cout << x2 << std::endl;
             double dist;
             if (metric == "minkowski") {
                 // must evaulate expression to assign to xarray
@@ -70,10 +66,19 @@ xt::xarray<double> pdist(xt::xarray<double> X, std::string metric,
                 // must evaulate expression to assign to xarray
                 dist = sqeuclidean(x1, x2, w)();
             }
-            // std::cout << dist << std::endl;
             mat(i, j) = dist;
             mat(j, i) = dist;
         }
     }
     return mat;
+}
+
+xt::xarray<double> pdist(xt::xarray<double> X, std::string metric, double w,
+                         double p=2) {
+    xt::xarray<double> w_vec = xt::ones<double>({1, int(X.shape(1))}) * w;
+    return pdist(X, metric, w_vec, p);
+}
+
+xt::xarray<double> pdist(xt::xarray<double> X, std::string metric, double p=2) {
+    return pdist(X, metric, 1, p);
 }
