@@ -74,11 +74,18 @@ xt::xarray<double> pdist(xt::xarray<double> X, std::string metric,
 }
 
 xt::xarray<double> pdist(xt::xarray<double> X, std::string metric, double w,
-                         double p=2) {
+                         double p) {
     xt::xarray<double> w_vec = xt::ones<double>({1, int(X.shape(1))}) * w;
     return pdist(X, metric, w_vec, p);
 }
 
-xt::xarray<double> pdist(xt::xarray<double> X, std::string metric, double p=2) {
+xt::xarray<double> pdist(xt::xarray<double> X, std::string metric, double p) {
     return pdist(X, metric, 1, p);
+}
+
+xt::xarray<double> center_distances(xt::xarray<double> dist_mat) {
+    int n = dist_mat.shape(0);
+    auto means = xt::sum(dist_mat, 1) / (n - 1);
+    auto center_mat = xt::ones<double>({n, n}) * means;
+    return dist_mat - xt::transpose(center_mat);
 }

@@ -71,6 +71,20 @@ Calculate the pairwise distance matrix between samples in a data matrix.
 xt::xarray<double> pdist(xt::xarray<double> X, std::string metric,
                          xt::xarray<double> w, double p=2);
 
-xt::xarray<double> pdist(xt::xarray<double> X, std::string metric, double w, double p=2);
+xt::xarray<double> pdist(xt::xarray<double> X, std::string metric, double w,
+                         double p=2);
 
 xt::xarray<double> pdist(xt::xarray<double> X, std::string metric, double p=2);
+
+/*!
+Row-center a distance matrix.
+
+Zero center rows in a distance matrix by subtracting the row average from each
+value. While this decreases the magnitude in distances, necessary for NCFS, it
+does break symmetry. You can no longer assume D[i, j] == D[j, i].
+
+@param dist_mat: an (n x n) distance matrix.
+
+@return An (n x n) row-centered distance matrix. 
+*/
+xt::xarray<double> center_distances(xt::xarray<double> dist_mat);
