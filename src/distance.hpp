@@ -88,3 +88,13 @@ does break symmetry. You can no longer assume D[i, j] == D[j, i].
 @return An (n x n) row-centered distance matrix. 
 */
 xt::xarray<double> center_distances(xt::xarray<double> dist_mat);
+
+/*!
+Calculate the pairwise distance between each sample in each feature.
+
+@param data: an (n x m) data matrix with n samples and m features.
+@param metric: distance metric to use. Either minkowski or sqeucliean.
+@param p: power to raise distances to with minkowski distance.
+*/
+xt::xarray<double> pairwise_feature_distance(xt::xarray<double> data_matrix,
+                                             std::string metric, double p);

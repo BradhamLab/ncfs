@@ -89,3 +89,23 @@ xt::xarray<double> center_distances(xt::xarray<double> dist_mat) {
     auto center_mat = xt::ones<double>({n, n}) * means;
     return dist_mat - xt::transpose(center_mat);
 }
+
+xt::xarray<double> pairwise_feature_distance(xt::xarray<double> data_matrix,
+                                             std::string metric, double p) {
+    // a |feature | x |sample| x |sample| distance matrix, where
+    // dists[0] is a pairwise distance matrix for samples in
+    xt::xarray<double> dists = xt::zeros<double>({int(data_matrix.shape(1)),
+                                                  int(data_matrix.shape(0)),
+                                                  int(data_matrix.shape(0))});
+    for (int i = 0; i < data_matrix.shape(1); i++) {
+        auto f_column = xt::reshape_view(xt::view(data_matrix, xt::all(), i),
+                                         {int(data_matrix.shape(0)), 1});
+        auto f_pdist = pdist(f_column, metric, 1, p);
+        for (int k=0; k < f_pdist.shape(0); k++) {
+            for (int l=0; l < f_pdist.shape(1); l++) {
+                dists(i, k, l) = f_pdist(k, l);
+            }
+        }
+    }
+    return dists;
+}
