@@ -12,7 +12,7 @@ import numpy as np
 from scipy import spatial
 from sklearn import base, model_selection
 
-def pairwise_feature_distance(data_matrix, metric='seuclidean'):
+def pairwise_feature_distance(data_matrix, metric='euclidean'):
     """
     Calculate the pairwise distance between each sample in each feature.
     
