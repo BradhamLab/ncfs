@@ -1,6 +1,7 @@
 #include "distance.hpp"
-#include "xtensor-blas/xlinalg.hpp"
 #include "xtensor/xview.hpp"
+#include "xtensor/xio.hpp"
+#include <iostream>
 
 xt::xarray<double> minkowski(xt::xarray<double> x, xt::xarray<double> y,
                              double p, xt::xarray<double> w) {
@@ -29,12 +30,12 @@ xt::xarray<double> sqeuclidean(xt::xarray<double> x, xt::xarray<double> y,
     x = _validate_vector(x);
     y = _validate_vector(y);
     w = _validate_vector(w);
-    auto wx_y = w * (x - y);
-    return xt::linalg::dot(wx_y, wx_y);
+    auto x_y = (x - y);
+    return xt::sum(w * (x_y * x_y));
 }
 
 xt::xarray<double> sqeuclidean(xt::xarray<double> x, xt::xarray<double> y,
-                               double w=1) {
+                               double w) {
     xt::xarray<double> w_vec = xt::ones_like(x) * w;
     return sqeuclidean(x, y, w_vec);
 }
@@ -51,16 +52,25 @@ xt::xarray<double> pdist(xt::xarray<double> X, std::string metric,
         throw "Unexpected metric: " < metric;
     }
     xt::xarray<double> mat = xt::zeros<double>({X.shape(0), X.shape(0)});
-    for (int i=1; i < X.shape(0); i++) {
-        for (int j=i; j < X.shape(0); j++) {
+    // diagnol in distance matrix should be zero, don't calculate.
+    // distance matrix is symmetric, calculate upper triangle only
+    std::cout << X << std::endl;
+    for (int i=0; i < X.shape(0); i++) {
+        for (int j=i + 1; j < X.shape(0); j++) {
+            std::cout << "i=" << i << ',' << "j=" << j << std::endl;
             auto x1 = xt::view(X, i);
             auto x2 = xt::view(X, j);
+            std::cout << x1 << std::endl;
+            std::cout << x2 << std::endl;
             double dist;
             if (metric == "minkowski") {
+                // must evaulate expression to assign to xarray
                 dist = minkowski(x1, x2, p, w)();
             } else {
+                // must evaulate expression to assign to xarray
                 dist = sqeuclidean(x1, x2, w)();
             }
+            // std::cout << dist << std::endl;
             mat(i, j) = dist;
             mat(j, i) = dist;
         }
