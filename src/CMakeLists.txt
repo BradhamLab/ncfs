@@ -6,7 +6,7 @@ find_package(xtensor REQUIRED)
 # if xtensor was built with xsimd support:
 # find_package(xsimd REQUIRED)
 
-set(SOURCE_FILES pdist_example.cpp distance.cpp)
+set(SOURCE_FILES pdist_example.cpp distance.cpp ncfs.cpp)
 add_executable(pdist_example ${SOURCE_FILES})
 
 if(MSVC)
