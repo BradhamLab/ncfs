@@ -61,4 +61,81 @@ xt::xarray<double> GaussianKernel::transform(xt::xarray<double> dmat) {
     auto centered = distance::center_distances(dmat);
     return xt::exp(-1.0 * centered * (1.0 /  sigma));
 }
+NCFS::NCFS(double alpha, double sigma, double lambda, double eta,
+             std::string metric, std::string kernel, double p) {
+    alpha_ = alpha;
+    sigma_ = sigma;
+    lambda_ = lambda;
+    eta_ = eta;
+    metric_ = metric;
+    kernel_ = kernel;
+    p_ = p;
+}
+
+xt::xarray<double> NCFS::format_class_matrix(xt::xarray<double> y) {
+    y = distance::_validate_vector(y);
+    xt::xarray<double> class_matrix = xt::zeros<double>({y.size(), y.size()});
+    for (int i = 0; i < y.size(); i++) {
+        for (int j = i + 1; j < y.size(); j++) {
+            if (y(i) == y(j)) {
+                class_matrix(i, j) = 1;
+                class_matrix(j, i) = 1;
+            }
+        }
+    }
+    std::cout << class_matrix << std::endl;
+    return class_matrix;
+}
+
+xt::xarray<double> NCFS::fit(xt::xarray<double> X, xt::xarray<double> y) {
+    // initialize feature weights
+    xt::xarray<double> coefs = xt::ones<double>({1, int(X.shape(1))});
+    // get baseline pairwise feature distances between samples
+    std::cout << "feature distances. " << std::endl;
+    xt::xarray<double> feature_dists = distance::pairwise_feature_distance(X,
+                                                                   metric_, p_);
+    std::cout << "got them distances" << std::endl;
+    NCFSOptimizer optimizer(alpha_);
+    // set kernel
+    KernelMixin kernel(sigma_, lambda_, coefs);
+    if (kernel_ == "exponential") {
+        ExponentialKernel kernel = ExponentialKernel(sigma_, lambda_, coefs);
+    } else {
+        GaussianKernel kernel = GaussianKernel(sigma_, lambda_, coefs);
+    }
+    // GaussianKernel kernel = GaussianKernel(sigma_, lambda_, coefs);
+    std::cout << "set kernel" << std::endl;
+    // construct class adjacency matrix
+    xt::xarray<double> class_matrix = format_class_matrix(y);
+    // initialize scores
+    double objective = 0;
+    double loss = std::numeric_limits<float>::infinity();
+    int diag_idxs[int(X.shape(0))][2];
+    for (int i=0; i < X.shape(0); i++) {
+        diag_idxs[i][0] = i;
+        diag_idxs[i][1] = i;
+    }
+    while (std::abs(loss) > eta_) {
+        auto distances = distance::pdist(X, metric_, kernel.get_weights(), p_);
+        auto p_reference = kernel.transform(distances);
+        for (int i=0; i < p_reference.shape(0); i++) {
+            p_reference(i, i) = 0.0;
+        }
+        auto row_sums = xt::sum(p_reference, 1)();
+        if (xt::all(row_sums == 0.0)) {
+            row_sums = row_sums + eta_;
+        }
+        auto scale_factors = 1.0 / row_sums;
+        p_reference = xt::transpose(xt::transpose(p_reference) * scale_factors);
+        auto gradients = kernel.gradients(p_reference, feature_dists,
+                                          class_matrix);
+        auto new_objective = xt::sum(p_reference * class_matrix)
+                           - lambda_ * xt::linalg::dot(kernel.get_weights(),
+                                                       kernel.get_weights());
+        loss = new_objective() - objective;
+        auto deltas = optimizer.steps(gradients, loss);
+        kernel.set_weights(kernel.get_weights() + deltas);
+    }
+    return kernel.get_weights();
+}
 } // end namespace definition
