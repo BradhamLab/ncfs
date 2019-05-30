@@ -47,10 +47,12 @@ xt::xarray<double> sqeuclidean(xt::xarray<double> x, xt::xarray<double> y) {
 xt::xarray<double> pdist(xt::xarray<double> X, std::string metric,
                          xt::xarray<double> w, double p) {
     if (X.dimension() != 2) {
-        throw "Expected two-dimensional array for  `X`.";
+        std::string msg = "Expected two-dimensional array for  `X`.";
+        throw std::runtime_error(msg);
     }
     if (metric != "minkowski" && metric != "sqeuclidean") {
-        throw "Unexpected metric: " < metric;
+        std::string msg =  std::string("Unexpected metric: ").append(metric);
+        throw std::runtime_error(msg);
     }
     xt::xarray<double> mat = xt::zeros<double>({X.shape(0), X.shape(0)});
     // diagnol in distance matrix should be zero, don't calculate.
