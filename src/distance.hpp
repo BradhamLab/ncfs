@@ -1,8 +1,10 @@
 #include <string>
 #include "xtensor/xarray.hpp"
 #include "xtensor/xmath.hpp"
+#ifndef DISTANCE_H
+#define DISTANCE_H
 
-
+namespace distance {
 /*!
 Validate vectors are 1 dimensional.
 */
@@ -98,3 +100,6 @@ Calculate the pairwise distance between each sample in each feature.
 */
 xt::xarray<double> pairwise_feature_distance(xt::xarray<double> data_matrix,
                                              std::string metric, double p);
+
+} // end namespace
+#endif /* DISTANCE_H */

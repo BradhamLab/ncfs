@@ -3,6 +3,7 @@
 #include "xtensor/xio.hpp"
 #include <iostream>
 
+namespace distance {
 xt::xarray<double> minkowski(xt::xarray<double> x, xt::xarray<double> y,
                              double p, xt::xarray<double> w) {
     _check_shape(x, y);
@@ -109,3 +110,4 @@ xt::xarray<double> pairwise_feature_distance(xt::xarray<double> data_matrix,
     }
     return dists;
 }
+} // end namespace
