@@ -3,6 +3,7 @@ project(pdist_example)
 
 find_package(xtl REQUIRED)
 find_package(xtensor REQUIRED)
+find_package(xtesnor-blas REQUIRED)
 # if xtensor was built with xsimd support:
 # find_package(xsimd REQUIRED)
 
