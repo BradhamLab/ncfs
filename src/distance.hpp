@@ -12,7 +12,8 @@ Validate vectors are 1 dimensional.
 inline xt::xarray<double> _validate_vector(xt::xarray<double> x) {
     auto out = xt::squeeze(x);
     if (out.dimension() > 1) {
-        throw std::runtime_error("Expected 1-dimensional array.");
+        std::string msg = "Expected 1-dimensional array.";
+        throw std::runtime_error(msg);
     }
     return out;
 }
@@ -23,7 +24,8 @@ Check vectors are the same shape
 inline void _check_shape(xt::xarray<double> x,
                          xt::xarray<double> y) {
     if (x.shape() != y.shape()) {
-        throw std::runtime_error("`x` and `y` are different shapes");
+        std::string msg = "`x` and `y` are different shapes";
+        throw std::runtime_error(msg);
     }
 }
 
