@@ -118,13 +118,12 @@ xt::xarray<double> NCFS::fit(xt::xarray<double> X, xt::xarray<double> y) {
     while (std::abs(loss) > eta_) {
         auto distances = distance::pdist(X, metric_, kernel.get_weights(), p_);
         auto p_reference = kernel.transform(distances);
+        // pseudo counts to avoid dividing by zero in row sums
+        p_reference = p_reference + 1e-20;
         for (int i=0; i < p_reference.shape(0); i++) {
             p_reference(i, i) = 0.0;
         }
-        auto row_sums = xt::sum(p_reference, 1)();
-        if (xt::all(row_sums == 0.0)) {
-            row_sums = row_sums + eta_;
-        }
+        auto row_sums = xt::sum(p_reference, 1);
         auto scale_factors = 1.0 / row_sums;
         p_reference = xt::transpose(xt::transpose(p_reference) * scale_factors);
         auto gradients = kernel.gradients(p_reference, feature_dists,
