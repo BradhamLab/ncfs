@@ -3,7 +3,7 @@ project(pdist_example)
 
 find_package(xtl REQUIRED)
 find_package(xtensor REQUIRED)
-find_package(xtesnor-blas REQUIRED)
+# find_package(xtesnor-blas REQUIRED)
 # if xtensor was built with xsimd support:
 # find_package(xsimd REQUIRED)
 
@@ -21,4 +21,17 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR
     target_compile_options(pdist_example PRIVATE -march=native -std=c++14)
 endif()
 
-target_link_libraries(pdist_example xtensor)
+add_definitions(-DHAVE_CBLAS=1)
+
+if (WIN32)
+    find_package(OpenBLAS REQUIRED)
+    set(BLAS_LIBRARIES ${CMAKE_INSTALL_PREFIX}${OpenBLAS_LIBRARIES})
+else ()
+    find_package(BLAS REQUIRED)
+    find_package(LAPACK REQUIRED)
+endif()
+
+message(STATUS "BLAS VENDOR:    " ${BLA_VENDOR})
+message(STATUS "BLAS LIBRARIES: " ${BLAS_LIBRARIES})
+
+target_link_libraries(pdist_example xtensor ${BLAS_LIBRARIES} ${LAPACK_LIBRARIES})
