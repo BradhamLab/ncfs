@@ -672,7 +672,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
 
         # caclulate weight adjustments
         gradients = self.kernel_.gradients(p_reference, feature_distances,
-                                                 class_matrix)
+                                           class_matrix)
             
         # calculate objective function
         new_objective = (np.sum(p_reference * class_matrix) \
