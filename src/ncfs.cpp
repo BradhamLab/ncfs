@@ -124,16 +124,22 @@ xt::xarray<double> NCFS::fit(xt::xarray<double> X, xt::xarray<double> y) {
             p_reference(i, i) = 0.0;
         }
         auto row_sums = xt::sum(p_reference, 1);
+        std::cout << "row sums: " << row_sums << std::endl;
         auto scale_factors = 1.0 / row_sums;
         p_reference = xt::transpose(xt::transpose(p_reference) * scale_factors);
         auto gradients = kernel.gradients(p_reference, feature_dists,
                                           class_matrix);
-        auto new_objective = xt::sum(p_reference * class_matrix)
-                           - lambda_ * xt::linalg::dot(kernel.get_weights(),
-                                                       kernel.get_weights());
-        loss = new_objective() - objective;
+        std::cout << "gradients: " << gradients << std::endl;
+        auto weight_sum = xt::sum(kernel.get_weights() * kernel.get_weights());
+        std::cout << "weights: " << kernel.get_weights() << std::endl;
+        std::cout << "weight sum: " << weight_sum << std::endl;
+        double new_objective = (xt::sum(p_reference * class_matrix)
+                           - lambda_ * weight_sum)();
+        loss = new_objective - objective;
         auto deltas = optimizer.steps(gradients, loss);
         kernel.set_weights(kernel.get_weights() + deltas);
+        objective = new_objective;
+        std::cout << "deltas: " << deltas << std::endl;
     }
     return kernel.get_weights();
 }
