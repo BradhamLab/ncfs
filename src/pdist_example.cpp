@@ -5,30 +5,24 @@
 #include <iostream>
 #include <string>
 #include "ncfs.hpp"
+#include <istream>
+#include <fstream>
+#include "xtensor/xcsv.hpp"
+#include "xtensor/xsort.hpp"
 
 int main(int argc, char* argv[]) {
-    xt::xarray<double> arr1 {
-        {1.0, 2.0},
-        {2.0, 5.0},
-        {3.0, 4.0}
-    };
-    xt::xarray<double> arr2 {1, 1, 2};
-    xt::xarray<double> ones {1.0, 1.0};
-    std::string metric = "minkowski";
-    std::cout << "Input: \n" << arr1 << std::endl;
-    xt::xarray<double> res = distance::pdist(arr1, metric, ones, 2.0);
-    std::cout << "Output: \n" << res << std::endl;
-    xt::xarray<double> fdist = distance::pairwise_feature_distance(arr1, metric, 2.0);
-    std::cout << "Centered: \n" << distance::center_distances(res) << std::endl;
-    std::cout << "fpdist: \n" << fdist << std::endl;
-    ncfs::NCFSOptimizer hey = ncfs::NCFSOptimizer();
-    std::cout << "NCFSOptAlpha: " << hey.get_alpha() << std::endl;
-    hey.set_alpha(0.5);
-    std::cout << "Changed Alpha: " << hey.get_alpha() << std::endl;
-    ncfs::KernelMixin oi = ncfs::KernelMixin(1.0, 2.0, xt::ones<double>({2, 1}));
-    std::cout << oi.gradients(xt::random::randn<double>({3, 3}),
-                              fdist, xt::eye(3)) << std::endl;
+    std::ifstream in_file;
+    in_file.open("../data/toy_data_X.csv");
+    auto X = xt::load_csv<double>(in_file);
+    std::ifstream y_file;
+    y_file.open("../data/toy_data_Y.csv");
+    auto y = xt::load_csv<double>(y_file);
     ncfs::NCFS model;
-    model.fit(arr1, arr2);
+    xt::xarray<double> weights = model.fit(X, y);
+      // print(np.argsort(-1 * f_select.coef_)[:10])
+    auto sorted = xt::argsort(-1 * weights);
+    for (int i=0; i < 10; i++) {
+        std::cout << i << ", " << sorted(i) << ", " << weights(sorted(i)) << std::endl;
+    }
     return 0;
 }
