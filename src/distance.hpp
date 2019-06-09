@@ -40,12 +40,17 @@ Calculate the minkowski distance between two vectors of the same size.
 
 @return minkowski distance between x and y
 */
-xt::xarray<double> minkowski(xt::xarray<double> x, xt::xarray<double> y,
-                             double p, xt::xarray<double> w);
-xt::xarray<double> minkowski(xt::xarray<double> x, xt::xarray<double> y,
-                             double p, double w=1);
-xt::xarray<double> minkowski(xt::xarray<double> x, xt::xarray<double> y,
-                             double p);
+xt::xarray<double> minkowski(const xt::xarray<double>& x,
+                             const xt::xarray<double>& y,
+                             const double& p,
+                             const xt::xarray<double>& w);
+xt::xarray<double> minkowski(const xt::xarray<double>& x,
+                             const xt::xarray<double>& y,
+                             const double& p,
+                             const double& w=1);
+xt::xarray<double> minkowski(const xt::xarray<double>& x,
+                             const xt::xarray<double>& y,
+                             const double& p);
 
 /*!
 Calculate the squared euclidean distance between two vectors of the same size.
@@ -57,11 +62,14 @@ Calculate the squared euclidean distance between two vectors of the same size.
 
 @return squared euclidean distance between x and y
 */
-xt::xarray<double> sqeuclidean(xt::xarray<double> x, xt::xarray<double> y,
-                               xt::xarray<double> w);
-xt::xarray<double> sqeuclidean(xt::xarray<double> x, xt::xarray<double> y,
-                               double w=1);
-xt::xarray<double> sqeuclidean(xt::xarray<double> x, xt::xarray<double> y);
+xt::xarray<double> sqeuclidean(const xt::xarray<double>& x,
+                               const xt::xarray<double>& y,
+                               const xt::xarray<double>& w);
+xt::xarray<double> sqeuclidean(const xt::xarray<double>& x,
+                               const xt::xarray<double>& y,
+                               const double& w=1);
+xt::xarray<double> sqeuclidean(const xt::xarray<double>& x,
+                               const xt::xarray<double>& y);
 
 /*!
 Calculate the pairwise distance matrix between samples in a data matrix.
@@ -73,13 +81,19 @@ Calculate the pairwise distance matrix between samples in a data matrix.
 
 @return An (n x n) distance matrix.
 */
-xt::xarray<double> pdist(xt::xarray<double> X, std::string metric,
-                         xt::xarray<double> w, double p=2);
+xt::xarray<double> pdist(const xt::xarray<double>& X,
+                         const std::string& metric,
+                         const xt::xarray<double>& w,
+                         const double& p=2);
 
-xt::xarray<double> pdist(xt::xarray<double> X, std::string metric, double w,
-                         double p=2);
+xt::xarray<double> pdist(const xt::xarray<double>& X,
+                         const std::string& metric,
+                         const double& w,
+                         const double& p=2);
 
-xt::xarray<double> pdist(xt::xarray<double> X, std::string metric, double p=2);
+xt::xarray<double> pdist(const xt::xarray<double>& X, 
+                         const std::string& metric,
+                         const double& p=2);
 
 /*!
 Row-center a distance matrix.
@@ -92,7 +106,7 @@ does break symmetry. You can no longer assume D[i, j] == D[j, i].
 
 @return An (n x n) row-centered distance matrix. 
 */
-xt::xarray<double> center_distances(xt::xarray<double> dist_mat);
+xt::xarray<double> center_distances(const xt::xarray<double>& dist_mat);
 
 /*!
 Calculate the pairwise distance between each sample in each feature.
@@ -101,8 +115,9 @@ Calculate the pairwise distance between each sample in each feature.
 @param metric: distance metric to use. Either minkowski or sqeucliean.
 @param p: power to raise distances to with minkowski distance.
 */
-xt::xarray<double> pairwise_feature_distance(xt::xarray<double> data_matrix,
-                                             std::string metric, double p);
+xt::xarray<double> pairwise_feature_distance(const xt::xarray<double>& data_matrix,
+                                             const std::string& metric,
+                                             const double& p);
 
 } // end namespace
 #endif /* DISTANCE_H */
