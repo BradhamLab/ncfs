@@ -12,7 +12,7 @@ import numpy as np
 from scipy import spatial
 from sklearn import base, model_selection
 
-def pairwise_feature_distance(data_matrix, metric='seuclidean'):
+def pairwise_feature_distance(data_matrix, metric='euclidean'):
     """
     Calculate the pairwise distance between each sample in each feature.
     
@@ -38,6 +38,7 @@ def pairwise_feature_distance(data_matrix, metric='seuclidean'):
                         spatial.distance.pdist(data_matrix[:, j].reshape(-1, 1),
                                                metric=metric))
     return dists
+
 
 def center_distances(distance_matrix):
     """
@@ -645,11 +646,12 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         float
             Objective reached by current iteration.
         """
-        # calculate D_w(x_i, x_j): w^2 * |x_i - x_j] for all i,j
-        distances = spatial.distance.pdist(X, metric=self.metric,
-                                           w=np.power(self.coef_, 2))
+        # calculate D_w(x_i, x_j): sum(w_l^2 * |x_il - x_jl], l) for all i,j
+        distances = np.sum(feature_distances
+                           * self.coef_[:, np.newaxis, np.newaxis]**2,
+                           axis=0)
         # organize as distance matrix
-        distances = spatial.distance.squareform(distances)
+        # distances = spatial.distance.squareform(distances)
         # calculate K(D_w(x_i, x_j)) for all i, j pairs
         p_reference = self.kernel_.transform(distances)
         # set p_ii = 0, can't select self in leave-one-out
@@ -672,11 +674,11 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
 
         # caclulate weight adjustments
         gradients = self.kernel_.gradients(p_reference, feature_distances,
-                                                 class_matrix)
+                                           class_matrix)
             
         # calculate objective function
         new_objective = (np.sum(p_reference * class_matrix) \
-                        - self.reg * np.dot(self.coef_, self.coef_))
+                      - self.reg * np.dot(self.coef_, self.coef_))
         # calculate loss from previous objective function
         loss = new_objective - objective
         # update weights
@@ -742,12 +744,16 @@ def toy_dataset(n_features=1000):
 def main():
     X, y = toy_dataset()
     f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='cityblock',
-                    kernel='exponential', solver='adam', stochastic=True)
+                    kernel='gaussian', solver='ncfs', stochastic=False)
     from timeit import default_timer as timer
-    start = timer()
-    f_select.fit(X, y)
-    end = timer()
-    print("Execution time in seconds: {}".format(end - start))
+    times = np.zeros(10)
+    # previous 181.82286000379972
+    for i in range(10):            
+        start = timer()
+        f_select.fit(X, y)
+        end = timer()
+        times[i] = end - start
+    print("Average execution time in seconds: {}".format(np.mean(times)))
     print(np.argsort(-1 * f_select.coef_)[:10])
     print(f_select.coef_[0], f_select.coef_[100])
 
