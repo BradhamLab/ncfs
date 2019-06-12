@@ -655,8 +655,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         # calculate K(D_w(x_i, x_j)) for all i, j pairs
         p_reference = self.kernel_.transform(distances)
         # set p_ii = 0, can't select self in leave-one-out
-        for i in range(p_reference.shape[0]):
-            p_reference[i, i] = 0
+        p_reference = np.fill_diagnol(p_reference, 0.0)
 
         # add pseudocount if necessary to avoid dividing by zero
         row_sums = p_reference.sum(axis=1)
