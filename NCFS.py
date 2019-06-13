@@ -274,21 +274,18 @@ class KernelMixin(object):
         # calculate probability of correct classification
         p_correct = np.sum(p_reference * class_matrix, axis=1)
         # caclulate weight adjustments for each feature
-        def partial(feature_dist, w):
+        def f(l):
             # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
-            d_mat = feature_dist * p_reference
+            d_mat = feature_distances[l] * p_reference
             # calculate p_i * sum(D_ij), j from 0 to N
             all_term = p_correct * d_mat.sum(axis=1)
             # weighted in-class distances using adjacency matrix,
             in_class_term = np.sum(d_mat * class_matrix, axis=1)
             sample_terms = all_term - in_class_term
             # calculate delta following gradient ascent 
-            return 2 * w * ((1 / self.sigma) * sample_terms.sum() - self.reg)
-        deltas = joblib.Parallel(n_jobs=self.n_jobs)\
-                                (joblib.delayed(partial)\
-                                (f, w)\
-                                for f, w in zip(feature_distances, self.weights))
-        return np.array(deltas)
+            return 2 * self.weights[l] \
+                     * ((1 / self.sigma) * sample_terms.sum() - self.reg)
+        return np.vectorize(f)(range(self.weights.size))
 
     def update_weights(self, new_weights):
         """
@@ -766,11 +763,13 @@ def main():
                     kernel='gaussian', solver='ncfs', stochastic=False,
                     n_jobs=2)
     from timeit import default_timer as timer
-    times = np.zeros(10)
+    times = np.zeros(5)
     # previous 181.82286000379972
     # not parallel: 116
     # parallel, jobs=1 = 124
-    for i in range(10):            
+    # expanding dims = 150s
+    # vectorized 104
+    for i in range(times.size):            
         start = timer()
         f_select.fit(X, y)
         end = timer()
