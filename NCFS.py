@@ -643,7 +643,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                              'number of features as learnt feature weights.')
         if self.kernel == 'exponential':
             X = NCFS.__check_X(X)
-        return X * self.coef_
+        return X * self.coef_**2
 
     def __fit(self, X, class_matrix, objective, feature_distances):
         """
