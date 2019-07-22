@@ -11,6 +11,7 @@ Author : Dakota Hawkins
 import numpy as np
 from scipy import spatial
 from sklearn import base, model_selection
+import joblib
 
 def pairwise_feature_distance(data_matrix, metric='cityblock'):
     """
@@ -208,7 +209,7 @@ class AdamOptimizer(object):
 class KernelMixin(object):
     """Base class for kernel functions."""
 
-    def __init__(self, sigma, reg, weights):
+    def __init__(self, sigma, reg, weights, n_jobs=1):
         """
         Base class for kernel functions.
 
@@ -220,6 +221,9 @@ class KernelMixin(object):
             Regularization parameter.
         weights : numpy.ndarray
             Initial vector of feature weights.
+        n_jobs : int, optional
+            Number of jobs to issue when calculating feature gradients. Default
+            is 1.
 
         Methods
         -------
@@ -234,6 +238,7 @@ class KernelMixin(object):
         self.sigma = sigma
         self.reg = reg
         self.weights = weights
+        self.n_jobs = n_jobs
 
     def transform(self, distance_matrix):
         """Apply a kernel transformation to a distance matrix."""
@@ -266,12 +271,10 @@ class KernelMixin(object):
             Gradient vector for each feature with respect to the objective
             function.
         """
-        deltas = np.zeros(self.weights.size, dtype=np.float64)
         # calculate probability of correct classification
-        # check class mat one hot shit
         p_correct = np.sum(p_reference * class_matrix, axis=1)
         # caclulate weight adjustments for each feature
-        for l in range(self.weights.size):
+        def f(l):
             # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
             d_mat = feature_distances[l] * p_reference
             # calculate p_i * sum(D_ij), j from 0 to N
@@ -280,9 +283,9 @@ class KernelMixin(object):
             in_class_term = np.sum(d_mat * class_matrix, axis=1)
             sample_terms = all_term - in_class_term
             # calculate delta following gradient ascent 
-            deltas[l] = 2 * self.weights[l] \
-                      * ((1 / self.sigma) * sample_terms.sum() - self.reg)
-        return deltas
+            return 2 * self.weights[l] \
+                     * ((1 / self.sigma) * sample_terms.sum() - self.reg)
+        return np.vectorize(f)(range(self.weights.size))
 
     def update_weights(self, new_weights):
         """
@@ -299,7 +302,7 @@ class KernelMixin(object):
 class ExponentialKernel(KernelMixin):
     """Class for the exponential kernel function used in original NCFS paper."""
 
-    def __init__(self, sigma, reg, weights):
+    def __init__(self, sigma, reg, weights, n_jobs=1):
         """
         Class for the exponential kernel function used in original NCFS paper.
 
@@ -313,6 +316,9 @@ class ExponentialKernel(KernelMixin):
             Regularization parameter.
         weights : numpy.ndarray
             Initial vector of feature weights.
+        n_jobs : int, optional
+            Number of jobs to issue when calculating feature gradients. Default
+            is 1.
 
         Methods
         -------
@@ -324,7 +330,7 @@ class ExponentialKernel(KernelMixin):
         update_weights():
             Update feature weights to a new value.
         """
-        super(ExponentialKernel, self).__init__(sigma, reg, weights)
+        super(ExponentialKernel, self).__init__(sigma, reg, weights, n_jobs)
 
     def transform(self, distance_matrix):
         """
@@ -345,7 +351,7 @@ class ExponentialKernel(KernelMixin):
 
 class GaussianKernel(KernelMixin):
 
-    def __init__(self, sigma, reg, weights):
+    def __init__(self, sigma, reg, weights, n_jobs=1):
         """
         Class for sample-centered distance kernel function.
 
@@ -362,6 +368,9 @@ class GaussianKernel(KernelMixin):
             Regularization parameter.
         weights : numpy.ndarray
             Initial vector of feature weights.
+        n_jobs : int, optional
+            Number of jobs to issue when calculating feature gradients. Default
+            is 1.
 
         Methods
         -------
@@ -373,7 +382,7 @@ class GaussianKernel(KernelMixin):
         update_weights():
             Update feature weights to a new value.
         """
-        super(GaussianKernel, self).__init__(sigma, reg, weights)
+        super(GaussianKernel, self).__init__(sigma, reg, weights, n_jobs)
 
     def transform(self, distance_matrix):
         """
@@ -440,6 +449,9 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             ascent implies breaking the data set into 3 stratified partions and
             using each partition to update weights independently. Default is 
             False, and weight adjustment is done on the entire data matrix.
+        n_jobs : int, optional
+            Number of jobs to issue when calculating feature gradients. Default
+            is 1.
 
         Attributes:
         ----------
@@ -485,6 +497,9 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.kernel = kernel
         self.solver = solver
         self.stochastic = stochastic
+        self.n_jobs = n_jobs
+        if n_jobs is None:
+            self.n_jobs = 1
         self.coef_ = None
         self.score_ = None
 
@@ -539,11 +554,13 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         feature_distances = None
         if self.kernel == 'exponential':
             X = NCFS.__check_X(X)
-            self.kernel_ = ExponentialKernel(self.sigma, self.reg, self.coef_)
+            self.kernel_ = ExponentialKernel(self.sigma, self.reg, self.coef_,
+                                             self.n_jobs)
             feature_distances = pairwise_feature_distance(X, metric=self.metric)
         elif self.kernel == 'gaussian':
             X = X.astype(np.float64)
-            self.kernel_ = GaussianKernel(self.sigma, self.reg, self.coef_)
+            self.kernel_ = GaussianKernel(self.sigma, self.reg, self.coef_,
+                                          self.n_jobs)
             feature_distances = pairwise_feature_distance(X, metric=self.metric)
             for l in range(feature_distances.shape[0]):
                 feature_distances[l] = center_distances(feature_distances[l])
@@ -653,8 +670,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         # calculate K(D_w(x_i, x_j)) for all i, j pairs
         p_reference = self.kernel_.transform(distances)
         # set p_ii = 0, can't select self in leave-one-out
-        for i in range(p_reference.shape[0]):
-            p_reference[i, i] = 0
+        np.fill_diagonal(p_reference, 0.0)
 
         # add pseudocount if necessary to avoid dividing by zero
         row_sums = p_reference.sum(axis=1)
@@ -739,11 +755,22 @@ def toy_dataset(n_features=1000):
 def main():
     X, y = toy_dataset(n_features=1000)
     f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='cityblock',
-                    kernel='gaussian', solver='ncfs', stochastic=False)
+                    kernel='gaussian', solver='ncfs', stochastic=False,
+                    n_jobs=2)
     from timeit import default_timer as timer
+<<<<<<< HEAD
     times = np.zeros(1)
     # previous 181.82286000379972
     for i in range(len(times)):            
+=======
+    times = np.zeros(5)
+    # previous 181.82286000379972
+    # not parallel: 116
+    # parallel, jobs=1 = 124
+    # expanding dims = 150s
+    # vectorized 104
+    for i in range(times.size):            
+>>>>>>> 1b88398aa0939e96ff469271823132f805af1efe
         start = timer()
         f_select.fit(X, y)
         end = timer()
