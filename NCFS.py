@@ -497,9 +497,6 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.kernel = kernel
         self.solver = solver
         self.stochastic = stochastic
-        self.n_jobs = n_jobs
-        if n_jobs is None:
-            self.n_jobs = 1
         self.coef_ = None
         self.score_ = None
 
@@ -554,13 +551,11 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         feature_distances = None
         if self.kernel == 'exponential':
             X = NCFS.__check_X(X)
-            self.kernel_ = ExponentialKernel(self.sigma, self.reg, self.coef_,
-                                             self.n_jobs)
+            self.kernel_ = ExponentialKernel(self.sigma, self.reg, self.coef_)
             feature_distances = pairwise_feature_distance(X, metric=self.metric)
         elif self.kernel == 'gaussian':
             X = X.astype(np.float64)
-            self.kernel_ = GaussianKernel(self.sigma, self.reg, self.coef_,
-                                          self.n_jobs)
+            self.kernel_ = GaussianKernel(self.sigma, self.reg, self.coef_)
             feature_distances = pairwise_feature_distance(X, metric=self.metric)
             for l in range(feature_distances.shape[0]):
                 feature_distances[l] = center_distances(feature_distances[l])
