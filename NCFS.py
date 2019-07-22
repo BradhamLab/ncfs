@@ -758,11 +758,6 @@ def main():
                     kernel='gaussian', solver='ncfs', stochastic=False,
                     n_jobs=2)
     from timeit import default_timer as timer
-<<<<<<< HEAD
-    times = np.zeros(1)
-    # previous 181.82286000379972
-    for i in range(len(times)):            
-=======
     times = np.zeros(5)
     # previous 181.82286000379972
     # not parallel: 116
@@ -770,7 +765,6 @@ def main():
     # expanding dims = 150s
     # vectorized 104
     for i in range(times.size):            
->>>>>>> 1b88398aa0939e96ff469271823132f805af1efe
         start = timer()
         f_select.fit(X, y)
         end = timer()
