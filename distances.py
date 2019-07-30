@@ -43,8 +43,7 @@ def phi_s(x, y, w=_mock_ones):
 @numba.njit()
 def rho_p(x, y, w=_mock_ones):
     """Calculate the rho_p proportionality metric between two vectors."""
-    result = 
-    return(variance(x - y, w) / variance(x, w) + variance(y, w))
+    return variance(x - y, w) / (variance(x, w) + variance(y, w))
   
 supported_distances = {'l1': manhattan,
                        'cityblock': manhattan,
