@@ -11,7 +11,6 @@ Author : Dakota Hawkins
 import numpy as np
 from scipy import spatial
 from sklearn import base, model_selection
-import joblib
 
 def pairwise_feature_distance(data_matrix, metric='euclidean'):
     """
