@@ -127,26 +127,40 @@ class KernelMixin(object):
         """Apply a kernel transformation to a distance matrix."""
         return distance_matrix
 
-    def gradients(self, p_reference, feature_distances, class_matrix):
-        """
+    def gradients(self, p_reference, partials, class_matrix):
+        r"""
         Calculate gradients with respect to feature weights.
 
         Calculates the gradient vector of the objective function with respect
         to feature weights. Objective function is the same outlined in the
         original NCFS paper.
+
+        **Objective Function**:
+
+        .. math::
+            E(\vec w) = \sum \limits_i^N \sum \limits_i^N y_{ij} * p_{ij}
+                      - \lambda \sum \limits_l^M w_l^2
         
         Parameters
         ----------
         p_reference : numpy.ndarray
-            A (sample x sample) probability matrix with p_ij represents the
-            probability of selecting sample j as a reference for sample i.
-        feature_distances : numpy.ndarray
-            A (feature x sample x sample) tensor, holding per feature sample
-            distances, such that [l, i, j] indexes the distance between
-            sample i and j in feature l.
+            A (sample x sample) probability matrix with :math:`P_{ij}`
+            represents the probability of selecting sample :math:`j` as a
+            reference for sample :math:`i`.
+        partials : numpy.ndarray
+            A (sample x sample x feature) tensor, holding partial derivative
+            values, such that
+
+            .. math::
+                A[i, j, l] = \frac{\partial D(x_i, x_j, w)}{\partial w_l}
+
+            Where :math:`D(x_i, x_j, w)` is some weighted distance function.
+
         class_matrix : numpy.ndarray
-            A one-hot (sample x sample) matrix where c_ij = 1 indicates sample
-            i and sample j are in the same class, and c_ij = 0 otherwise.
+            A one-hot (sample x sample) matrix where :math:`Y_{ij} = 1`
+            indicates sample :math:`i` and sample :math:`j` are in the same
+            class, and :math:`Y_{ij} = 0` otherwise. It is assumed
+            :math:`Y_{ii} = 0`. 
         
         Returns
         -------
@@ -158,16 +172,15 @@ class KernelMixin(object):
         p_correct = np.sum(p_reference * class_matrix, axis=1)
         # caclulate weight adjustments for each feature
         def f(l):
-            # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
-            d_mat = feature_distances[l] * p_reference
+            # weighted partial matrix D_ij = d_ij * p_ij, p_ii = 0
+            fuzzy_partials = partials[:, :, l] * p_reference
             # calculate p_i * sum(D_ij), j from 0 to N
-            all_term = p_correct * d_mat.sum(axis=1)
+            all_term = p_correct * fuzzy_partials.sum(axis=1)
             # weighted in-class distances using adjacency matrix,
-            in_class_term = np.sum(d_mat * class_matrix, axis=1)
+            in_class_term = np.sum(fuzzy_partials * class_matrix, axis=1)
             sample_terms = all_term - in_class_term
-            # calculate delta following gradient ascent 
-            return 2 * self.weights[l] \
-                     * ((1 / self.sigma) * sample_terms.sum() - self.reg)
+            # calculate partial of objective function for w_l 
+            return (1 / self.sigma) * sample_terms.sum( )- 2 * self.reg 
         return np.vectorize(f)(range(self.weights.size))
 
     def update_weights(self, new_weights):
