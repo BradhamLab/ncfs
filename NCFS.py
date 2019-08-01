@@ -12,7 +12,7 @@ import numpy as np
 from scipy import spatial
 from sklearn import base, model_selection
 
-def pairwise_feature_distance(data_matrix, metric='euclidean'):
+def pairwise_feature_distance(data_matrix, metric='cityblock'):
     """
     Calculate the pairwise distance between each sample in each feature.
     
@@ -22,7 +22,7 @@ def pairwise_feature_distance(data_matrix, metric='euclidean'):
         An (N x M) data matrix where N is the number of samples and M is the
         number of features.
     metric : str, optional
-        Distance metric to use. The default is 'euclidean'.
+        Distance metric to use. The default is 'cityblock'.
     
     Returns
     -------
@@ -397,8 +397,9 @@ class GaussianKernel(KernelMixin):
         numpy.ndarray
             A (sampel x sample) kernel distance matrix.
         """
-        centered = center_distances(distance_matrix)
-        return np.exp(-1 * centered / self.sigma, dtype=np.float64)
+        out = np.exp(-1 * distance_matrix / self.sigma)
+        out[np.where(out == np.inf)] = np.max(out[out != np.inf])
+        return out
 
 
 class NCFS(base.BaseEstimator, base.TransformerMixin):
@@ -414,8 +415,8 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
     """
 
     def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
-                 metric='euclidean', kernel='gaussian', solver='ncfs',
-                 stochastic=False, n_jobs=None):
+                 metric='cityblock', kernel='gaussian', solver='ncfs',
+                 stochastic=False):
         """
         Class to perform Neighborhood Component Feature Selection 
 
@@ -495,9 +496,6 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.kernel = kernel
         self.solver = solver
         self.stochastic = stochastic
-        self.n_jobs = n_jobs
-        if n_jobs is None:
-            self.n_jobs = 1
         self.coef_ = None
         self.score_ = None
 
@@ -505,10 +503,8 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
     def __check_X(X):
         mins = np.min(X, axis=0)
         maxes = np.max(X, axis=0)
-        if any(mins < 0):
-            raise ValueError('Values in X should be between 0 and 1.')
-        if any(maxes > 1):
-            raise ValueError('Values in X should be between 0 and 1.')
+        if any(mins < 0) or any(maxes > 1):
+            print('Best to have values in X between 0 and 1.')
         return X.astype(np.float64)
 
     def fit(self, X, y):
@@ -554,13 +550,11 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         feature_distances = None
         if self.kernel == 'exponential':
             X = NCFS.__check_X(X)
-            self.kernel_ = ExponentialKernel(self.sigma, self.reg, self.coef_,
-                                             self.n_jobs)
+            self.kernel_ = ExponentialKernel(self.sigma, self.reg, self.coef_)
             feature_distances = pairwise_feature_distance(X, metric=self.metric)
         elif self.kernel == 'gaussian':
             X = X.astype(np.float64)
-            self.kernel_ = GaussianKernel(self.sigma, self.reg, self.coef_,
-                                          self.n_jobs)
+            self.kernel_ = GaussianKernel(self.sigma, self.reg, self.coef_)
             feature_distances = pairwise_feature_distance(X, metric=self.metric)
             for l in range(feature_distances.shape[0]):
                 feature_distances[l] = center_distances(feature_distances[l])
@@ -662,12 +656,11 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         float
             Objective reached by current iteration.
         """
+        # organize as distance matrix by summing along feature index
         # calculate D_w(x_i, x_j): sum(w_l^2 * |x_il - x_jl], l) for all i,j
         distances = np.sum(feature_distances
                            * self.coef_[:, np.newaxis, np.newaxis]**2,
                            axis=0)
-        # organize as distance matrix
-        # distances = spatial.distance.squareform(distances)
         # calculate K(D_w(x_i, x_j)) for all i, j pairs
         p_reference = self.kernel_.transform(distances)
         # set p_ii = 0, can't select self in leave-one-out
@@ -679,10 +672,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         if n_zeros > 0:
             print('Adding pseudocounts to distance matrix to avoid ' +
                     'dividing by zero.')
-            if n_zeros == len(row_sums):
-                pseudocount = np.exp(-20)
-            else:
-                pseudocount = np.min(row_sums)
+            pseudocount = np.exp(-20)
             row_sums += pseudocount
         scale_factors = 1 / (row_sums)
         p_reference = (p_reference.T * scale_factors).T
@@ -757,7 +747,7 @@ def toy_dataset(n_features=1000):
     return x_std, classes
 
 def main():
-    X, y = toy_dataset()
+    X, y = toy_dataset(n_features=1000)
     f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='cityblock',
                     kernel='gaussian', solver='ncfs', stochastic=False,
                     n_jobs=2)
