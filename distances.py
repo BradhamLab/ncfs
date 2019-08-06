@@ -56,7 +56,7 @@ def phi_s(x, y, w=_mock_ones):
 @numba.njit()
 def rho_p(x, y, w=_mock_ones):
     """Calculate the rho_p proportionality metric between two vectors."""
-    return variance(x - y, w) / (variance(x, w) + variance(y, w))
+    return 1 - variance(x - y, w) / (variance(x, w) + variance(y, w))
 
 
 supported_distances = {'l1': manhattan,
@@ -111,28 +111,93 @@ class WeightedDistance(object):
         pass 
 
 class PhiS(WeightedDistance):
-    """Calculate easy partial derivatives for Symmetric Phi"""
+    r"""
+    Calculate partial derivatives for Symmetric Phi.
+    
+    .. math::
+
+        \phi_s = \frac{\Var(X - Y)}{\Var(X + y)}
+    """
 
     def __init__(self, X, w):
+        """
+        Class for quick calculuations of
+        :math:`\frac{\partial \phi_s}{\partial w_l}`.
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix.
+        w : numpy.ndarray
+            A feature-length vector 
+        """
         super(PhiS, self).__init__(X, w)
         X_bar = np.ones_like(X.T) * np.mean(X, axis=1)
+        X_bar = np.ones_like(X.T) * np.mean(X, axis=1)
         centered = X - X_bar.T
+        # calculate covariance matrix
         cov = np.cov(X, ddof=1)
-        # var = np.diag(cov).reshape(-1, 1)
+        # initialize (sample x sample x feature) tensor
         D = np.ones((X.shape[0], X.shape[0], X.shape[1]))
         # if you want to braodcast, do this, but it's slower
-        # oi = cov[:, :, None] * (squared[None, :, :] +  squared[:, None, :])\
+        # D = cov[:, :, None] * (squared[None, :, :] +  squared[:, None, :])\
         #    - centered[None, :, :] * centered[:, None, :]\
         #    * (var[:, None] + var[None, :])
+
+        # numba vectorize?
         for i in range(X.shape[0]):
             for j in range(X.shape[0]):
-                D[i, j, :] = 2.0 / (X.shape[1] - 1)\
+                D[i, j, :] = 4.0 / (X.shape[1] - 1)\
                            * (cov[i, j]\
                            * (centered[i, :] ** 2 +  centered[j, :] ** 2)\
                            - (centered[i, :] * centered[j, :])\
-                           * (cov[i, i] + cov[j, j]))
+                           * (cov[i, i] + cov[j, j]))\
+                           / ((cov[i, i] + cov[j, j] + 2 * cov[i, j]) ** 2)
         self.D_ = D
 
     def partials(self):
-        return self.D_ * self.weights_
+        return self.D_ * self.weights_[None, None, :]
+
+
+class RhoR(WeightedDistance):
+    r"""
+    Calculate partial derivatives for Rho metric of proportionality.
     
+    .. math::
+
+        \Rho_p = \frac{\Var(X - Y)}{\Var(X) + \Var(y)}
+    """
+
+    def __init__(self, X, w):
+        r"""
+        Class for quick calculuations of
+        :math:`\frac{\partial \rho_p}{\partial w_l}`.
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix.
+        w : numpy.ndarray
+            A feature-length vector 
+        """
+        super(RhoR, self).__init__(X, w)
+        # calculate a (sample x feature) matrix where sample values are
+        # centered by the sample mean (i.e X_bar[i, ] = X[i, ] - mean(X[i, ]))
+        X_bar = np.ones_like(X.T) * np.mean(X, axis=1)
+        centered = X - X_bar.T
+        # calculate covariance matrix
+        cov = np.cov(X, ddof=1)
+        # initialize (sample x sample x feature) tensor
+        D = np.ones((X.shape[0], X.shape[0], X.shape[1]))
+        for i in range(X.shape[0]):
+            for j in range(X.shape[0]):
+                D[i, j, :] = 4.0 / (X.shape[1] - 1)\
+                           * (cov[i, j]\
+                           * (centered[i, :] ** 2 + centered[j, :] ** 2)\
+                           - (centered[i, :] * centered[j, :])\
+                           * (cov[i, i] + cov[j, j])) \
+                           / ((cov[i, i] + cov[j, j]) ** 2)
+        self.D_ = D
+
+    def partials(self):
+        return self.D_ * -self.weights_[None, None, :]
