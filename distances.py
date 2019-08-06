@@ -116,11 +116,11 @@ class PhiS(WeightedDistance):
     
     .. math::
 
-        \phi_s = \frac{\Var(X - Y)}{\Var(X + y)}
+        \phi_s(X, Y) = \frac{\Var(X - Y)}{\Var(X + y)}
     """
 
     def __init__(self, X, w):
-        """
+        r"""
         Class for quick calculuations of
         :math:`\frac{\partial \phi_s}{\partial w_l}`.
         
@@ -165,7 +165,7 @@ class RhoR(WeightedDistance):
     
     .. math::
 
-        \Rho_p = \frac{\Var(X - Y)}{\Var(X) + \Var(y)}
+        \Rho_p(X, Y) = \frac{\Var(X - Y)}{\Var(X) + \Var(y)}
     """
 
     def __init__(self, X, w):
@@ -201,3 +201,67 @@ class RhoR(WeightedDistance):
 
     def partials(self):
         return self.D_ * -self.weights_[None, None, :]
+
+
+class Manhattan(WeightedDistance):
+    r"""
+    Calculate partial derivatives for weighted Manhattan Distance.
+    
+    .. math::
+
+        L1(X, Y) = \sum \limits_{i = 1}^N w_l^2| x_i - y_i |
+    """
+
+    def __init__(self, X, w):
+        r"""
+        Class for quick calculuations of
+        :math:`\frac{\partial L1}{\partial w_l}`.
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix.
+        w : numpy.ndarray
+            A feature-length vector 
+        """
+        super(Manhattan, self).__init__(X, w)
+        D = np.ones((X.shape[0], X.shape[0], X.shape[1]))
+        for i in range(X.shape[0]):
+            for j in range(X.shape[0]):
+                D[i, j, :] = 2 * np.abs(X[i, :] - X[j, :])
+        self.D_ = D
+
+    def partials(self):
+        return self.D_ * self.weights_[None, None, :]
+
+
+class SqEuclidean(WeightedDistance):
+    r"""
+    Calculate partial derivatives for weighted squared euclidean distance.
+    
+    .. math::
+
+        L2(X, Y) = \sum \limits_{i = 1}^N w_l^2 (x_i - y_i)^2 
+    """
+
+    def __init__(self, X, w):
+        r"""
+        Class for quick calculuations of
+        :math:`\frac{\partial L2}{\partial w_l}`.
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix.
+        w : numpy.ndarray
+            A feature-length vector 
+        """
+        super(SqEuclidean, self).__init__(X, w)
+        D = np.ones((X.shape[0], X.shape[0], X.shape[1]))
+        for i in range(X.shape[0]):
+            for j in range(X.shape[0]):
+                D[i, j, :] = 2 * (X[i, :] - X[j, :]) ** 2 
+        self.D_ = D
+
+    def partials(self):
+        return self.D_ * self.weights_[None, None, :]
