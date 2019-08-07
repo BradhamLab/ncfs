@@ -2,8 +2,8 @@ import numpy as np
 import numba
 
 _mock_ones = np.ones(2, dtype=np.float64)
-# implementation/syntax inspired by UMAP.distances
 
+# implementation/syntax of distance functions inspired by UMAP.distances
 @numba.njit()
 def manhattan(x, y, w=_mock_ones):
     """Calculate the L1-distance between two vectors."""
@@ -42,9 +42,10 @@ def covariance(x, y, w=_mock_ones):
     return result
 
 
+@numba.njit()
 def variance(x, w=_mock_ones):
     """Caluculate the sample variance of a vector."""
-    return covariance(x, x, w=_mock_ones)
+    return covariance(x, x, w=w)
 
 
 @numba.njit()
@@ -59,23 +60,61 @@ def rho_p(x, y, w=_mock_ones):
     return 1 - variance(x - y, w) / (variance(x, w) + variance(y, w))
 
 
-supported_distances = {'l1': manhattan,
-                       'cityblock': manhattan,
-                       'taxicab': manhattan,
-                       'manhattan': manhattan,
-                       'l2': sqeuclidean,
-                       'sqeuclidean': sqeuclidean,
-                       'phi_s': phi_s,
-                       'rho_p': rho_p}
-
 class WeightedDistance(object):
-    """
+    r"""
     Class for weighted, differentiable distance metrics.
+
+    Attributes
+    ----------
+        D_ : numpy.ndarray
+            A (sample x sample x feature) tensor of static values used to
+            calculate partial deriviates of feature weights.
+            
+            For example, for the weighted L1 distance, the partial for the
+            distance between sample :math:`i` and sample :math:`j` in feature
+            :math:`l` is:
+
+            .. math::
+
+                \frac{\partial L1(x_i, x_j, w)}{\partial w_l} =
+                      w_l | x_il - x_jl|
+
+            D_ is then a (sample x sample x feature) tensor of
+            :math:`|x_il - x_jl|` values.
+
+        weights_ : numpy.ndarray
+            A feature-length array of feature weights used when calculating
+            partials.
+
+            From the example above, the tensor `D_`
+            contains :math:`|x_il - x_jl|` values. Therefore, to calculate
+            partials each :math:`|x_il - x_jl|` value must be multiplied by its
+            associated :math:`w_l` value.
+
+    Methods
+    -------
+        update_weights(value : numpy.ndarray)
+            Update feature weights.
+        __fit(X : numpy.ndarray)
+            Fit the tensor D to the data matrix X. Not implemented in base
+            class.
+        partials()
+            Calculate and return a (sample x sample x feature) tensor, 
+            :math:`A`, of partial derivatives. Where:
+            
+            .. math::
+                A_{ijl} = \frac{\partial(Dist(X_i, X_j, w))}
+                               {\partial w_l}
+            
+            Not implemented in base class.
     """
 
     def __init__(self, X, w):
         """
-        Fit model to data for easy calculation of partial derivates
+        Fit model to data for quick calculation of partial derivates.
+
+        Fits a (sample x sample x feature) tensor to X that finds static 
+        values used during partial derivate calculatons.
 
         Parameters
         ----------
@@ -84,12 +123,15 @@ class WeightedDistance(object):
         w : numpy.ndarray
             A weight vector for each feature in X.
         """
-        if X.shape[1] != w.size():
+        if X.shape[1] != w.size:
             raise ValueError("Length of weight vector and the number of " 
                              "feautres in X do not align.")
-        self.D_ = None
+        self.__fit(X)
         self.weights_ = w
     
+    def __fit(self, X):
+        self.D_ = None
+
     def update_weights(self, value):
         """Set weights for each feature."""
         try:
@@ -102,13 +144,13 @@ class WeightedDistance(object):
             raise ValueError("Shape of weight vector differs from initialized.")
         self.weights_ = value
 
-
     def partials(self):
         """
         Calculate the partial derivative of the distance metric with respect to
         each feature weight.
         """
         pass 
+
 
 class PhiS(WeightedDistance):
     r"""
@@ -132,6 +174,10 @@ class PhiS(WeightedDistance):
             A feature-length vector 
         """
         super(PhiS, self).__init__(X, w)
+        self.__fit(X)
+
+    def __fit(self, X):
+        """Fit tensor D_ to X."""
         X_bar = np.ones_like(X.T) * np.mean(X, axis=1)
         X_bar = np.ones_like(X.T) * np.mean(X, axis=1)
         centered = X - X_bar.T
@@ -159,7 +205,7 @@ class PhiS(WeightedDistance):
         return self.D_ * self.weights_[None, None, :]
 
 
-class RhoR(WeightedDistance):
+class RhoP(WeightedDistance):
     r"""
     Calculate partial derivatives for Rho metric of proportionality.
     
@@ -180,9 +226,13 @@ class RhoR(WeightedDistance):
         w : numpy.ndarray
             A feature-length vector 
         """
-        super(RhoR, self).__init__(X, w)
+        super(RhoP, self).__init__(X, w)
         # calculate a (sample x feature) matrix where sample values are
         # centered by the sample mean (i.e X_bar[i, ] = X[i, ] - mean(X[i, ]))
+        self.__fit(X)
+
+    def __fit(self, X):
+        """Fit tensor D_ to X."""
         X_bar = np.ones_like(X.T) * np.mean(X, axis=1)
         centered = X - X_bar.T
         # calculate covariance matrix
@@ -225,6 +275,9 @@ class Manhattan(WeightedDistance):
             A feature-length vector 
         """
         super(Manhattan, self).__init__(X, w)
+        self.__fit(X)
+
+    def __fit(self, X):
         D = np.ones((X.shape[0], X.shape[0], X.shape[1]))
         for i in range(X.shape[0]):
             for j in range(X.shape[0]):
@@ -257,6 +310,9 @@ class SqEuclidean(WeightedDistance):
             A feature-length vector 
         """
         super(SqEuclidean, self).__init__(X, w)
+        self.__fit(X)
+
+    def __fit(self, X):
         D = np.ones((X.shape[0], X.shape[0], X.shape[1]))
         for i in range(X.shape[0]):
             for j in range(X.shape[0]):
@@ -265,3 +321,21 @@ class SqEuclidean(WeightedDistance):
 
     def partials(self):
         return self.D_ * self.weights_[None, None, :]
+
+supported_distances = {'l1': manhattan,
+                       'cityblock': manhattan,
+                       'taxicab': manhattan,
+                       'manhattan': manhattan,
+                       'l2': sqeuclidean,
+                       'sqeuclidean': sqeuclidean,
+                       'phi_s': phi_s,
+                       'rho_p': rho_p}
+
+partials = {'l1': Manhattan,
+            'cityblock': Manhattan,
+            'taxicab': Manhattan,
+            'manhattan': Manhattan,
+            'l2': SqEuclidean,
+            'sqeuclidean': SqEuclidean,
+            'phi_s': PhiS,
+            'rho_p': RhoP}
