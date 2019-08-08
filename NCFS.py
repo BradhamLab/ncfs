@@ -108,7 +108,7 @@ class NCFSOptimizer(object):
 class KernelMixin(object):
     """Base class for kernel functions."""
 
-    def __init__(self, sigma, reg, n_features):
+    def __init__(self, sigma, reg):
         """
         Base class for kernel functions.
 
@@ -129,7 +129,7 @@ class KernelMixin(object):
         """
         self.sigma = sigma
         self.reg = reg
-        self.gradients_ = np.zeros(n_features)
+        # self.gradients_ = np.zeros(n_features)
 
     def transform(self, distance_matrix):
         """Apply a kernel transformation to a distance matrix."""
@@ -180,20 +180,13 @@ class KernelMixin(object):
         """
         # calculate probability of correct classification
         p_correct = np.sum(p_reference * class_matrix, axis=1)
-        # caclulate weight adjustments for each feature
-        def f(l):
-            # weighted partial matrix D_ij = d_ij * p_ij, p_ii = 0
-            fuzzy_partials = partials[:, :, l] * p_reference
-            # calculate p_i * sum(D_ij), j from 0 to N
-            all_term = p_correct * fuzzy_partials.sum(axis=1)
-            # weighted in-class distances using adjacency matrix,
-            in_class_term = np.sum(fuzzy_partials * class_matrix, axis=1)
-            sample_terms = all_term - in_class_term
-            # calculate partial of objective function for w_l 
-            value = (1 / self.sigma) * sample_terms.sum()\
-                  - 2 * self.reg * weights[l]
-            return value
-        return np.vectorize(f)(range(weights.size))
+        fuzzy = p_reference[:, :, np.newaxis] * partials
+        all_term = p_correct[:, None] * fuzzy.sum(axis=1)
+        in_class = (class_matrix[:, :, None] * fuzzy).sum(axis=1)
+        sample_terms = all_term - in_class
+        gradients_ =  (1 / self.sigma) * sample_terms.sum(axis=0)\
+                   - 2 * self.reg * weights
+        return gradients_
 
 
 class ExponentialKernel(KernelMixin):
