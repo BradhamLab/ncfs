@@ -8,12 +8,27 @@ https://doi.org/10.4304/jcp.7.1.161-168
 Author : Dakota Hawkins
 """
 
+import numba
 import numpy as np
 from scipy import spatial
 from sklearn import base, model_selection
+
+# from ncfs_expanded import distances
 import distances
 
-def pairwise_feature_distance(data_matrix, metric='cityblock'):
+
+@numba.njit()
+def symmetric_pdist(x, w, dist, func):
+    for i in range(x.shape[0]):
+        u = x[i, :]
+        for j in range(i + 1, x.shape[0]):
+            v = x[j, :]
+            res = func(u, v, w)
+            dist[i, j] = res
+            dist[j, i] = res
+
+@numba.jit() # Python mode to allow array creation. For loop will be njit per
+def numba_feature_distance(data_matrix, func):
     """
     Calculate the pairwise distance between each sample in each feature.
     
@@ -33,16 +48,14 @@ def pairwise_feature_distance(data_matrix, metric='cityblock'):
     """
     # matrix to hold pairwise distances between samples in each feature
     dists = np.zeros((data_matrix.shape[1],
-                        data_matrix.shape[0], data_matrix.shape[0]))
+                      data_matrix.shape[0],
+                      data_matrix.shape[0]))
     # sample weights of 1 for numba distances 
     weights = np.ones(data_matrix.shape[0])
-    for j in range(data_matrix.shape[1]):
-        dists[j] = spatial.distance.squareform(
-                        spatial.distance.pdist(data_matrix[:, j].reshape(-1, 1),
-                                               metric=metric, w=weights))
+    for l in range(data_matrix.shape[1]):
+        symmetric_pdist(data_matrix[:, l].reshape(-1, 1), weights,
+                        dists[l], func)
     return dists
-
-
 
 class NCFSOptimizer(object):
     """Gradient ascent/descent optimization following NCFS protocol."""
@@ -95,7 +108,7 @@ class NCFSOptimizer(object):
 class KernelMixin(object):
     """Base class for kernel functions."""
 
-    def __init__(self, sigma, reg):
+    def __init__(self, sigma, reg, n_features):
         """
         Base class for kernel functions.
 
@@ -116,10 +129,11 @@ class KernelMixin(object):
         """
         self.sigma = sigma
         self.reg = reg
+        self.gradients_ = np.zeros(n_features)
 
     def transform(self, distance_matrix):
         """Apply a kernel transformation to a distance matrix."""
-        return distance_matrix
+        return np.exp(-1 * distance_matrix / self.sigma, dtype=np.float64)
 
     def gradients(self, p_reference, partials, weights, class_matrix):
         r"""
@@ -378,15 +392,14 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                              format(self.metric))
         else:
             self.metric_ = distances.supported_distances[self.metric]
-            feature_distances = pairwise_feature_distance(X,
-                                                          metric=self.metric_)
+            feature_distances = numba_feature_distance(X, func=self.metric_)
+            # initialize WeightedDistance object for partial calculations.
             weighted_dist = distances.partials[self.metric]
-
+        
+        self.distance_ = weighted_dist(X)
         n_samples, n_features = X.shape
         # initialize all weights as 1
         self.coef_ = np.ones(n_features, dtype=np.float64)
-        # initialize WeightedDistance object for quick partial calculations.
-        self.distance_ = weighted_dist(X, self.coef_)
         # construct adjacency matrix of class membership for matrix mult. 
         class_matrix = np.zeros((n_samples, n_samples), np.float64)
         for i in range(n_samples):
@@ -480,7 +493,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         p_reference = (p_reference.T * scale_factors).T
 
         # calculate partial derivates for each sample x sample x feature trip
-        partials = self.distance_.partials()
+        partials = self.distance_.partials(self.coef_)
 
         # caclulate weight adjustments
         gradients = self.kernel_.gradients(p_reference, partials, self.coef_,
@@ -494,7 +507,6 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         # update weights
         deltas = self.solver_.get_steps(gradients, loss)
         self.coef_ = self.coef_ + deltas
-        self.distance_.update_weights(self.coef_)
         # return objective score for new iteration
         return new_objective
 
