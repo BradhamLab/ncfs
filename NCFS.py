@@ -13,8 +13,8 @@ import numpy as np
 from scipy import spatial
 from sklearn import base, model_selection
 
-# from ncfs_expanded import distances
-import distances
+from ncfs_expanded import distances
+# import distances
 
 
 @numba.njit()
@@ -104,11 +104,36 @@ class NCFSOptimizer(object):
                 self.alpha *= 0.4
         return steps
 
-    
-class KernelMixin(object):
+@numba.njit(parallel=True)
+def exp_grad(p_reference, p_correct, partial, class_matrix, weight, reg, sigma):
+    fuzzy = p_reference * partial
+    all_term = p_correct * fuzzy.sum(axis=1)
+    in_class = (class_matrix * fuzzy).sum(axis=1)
+    val =  0.0
+    for i in numba.prange(all_term.size):
+        val += (all_term[i] - in_class[i])
+    return ((1.0 / sigma) * val - 2.0 * reg * weight)
+
+@numba.njit(parallel=True)
+def feature_gradients(p_reference, partials, weights, class_matrix,
+                        reg, sigma, gradients):
+    p_correct = p_reference.sum(axis=1)
+    for l in numba.prange(gradients.size):
+        gradients[l] = exp_grad(p_reference, p_correct,
+                                partials[:, :, l], class_matrix, weights[l],
+                                    reg, sigma)
+    return gradients
+
+kernel_spec = [
+    ('sigma', numba.float64),
+    ('reg', numba.float64),
+    ('gradients_', numba.float64[:])
+]
+# @numba.jitclass(kernel_spec) 
+class ExponentialKernel(object):
     """Base class for kernel functions."""
 
-    def __init__(self, sigma, reg):
+    def __init__(self, sigma, reg, n_features):
         """
         Base class for kernel functions.
 
@@ -118,6 +143,8 @@ class KernelMixin(object):
             Scaling parameter sigma as mentioned in original paper.
         reg : float
             Regularization parameter.
+        n_features : float
+            Number of features.
 
         Methods
         -------
@@ -129,11 +156,11 @@ class KernelMixin(object):
         """
         self.sigma = sigma
         self.reg = reg
-        # self.gradients_ = np.zeros(n_features)
+        self.gradients_ = np.zeros(n_features, np.float64)
 
     def transform(self, distance_matrix):
         """Apply a kernel transformation to a distance matrix."""
-        return np.exp(-1 * distance_matrix / self.sigma, dtype=np.float64)
+        return np.exp(-1 * distance_matrix / self.sigma)
 
     def gradients(self, p_reference, partials, weights, class_matrix):
         r"""
@@ -178,65 +205,17 @@ class KernelMixin(object):
             Gradient vector for each feature with respect to the objective
             function.
         """
-        # calculate probability of correct classification
+        # self.gradients_ = feature_gradients(p_reference, partials, weights,
+        #                                     class_matrix, self.reg, self.sigma,
+        #                                     self.gradients_)
+        fuzzy = p_reference[:, :, None] * partials
         p_correct = np.sum(p_reference * class_matrix, axis=1)
-        fuzzy = p_reference[:, :, np.newaxis] * partials
         all_term = p_correct[:, None] * fuzzy.sum(axis=1)
         in_class = (class_matrix[:, :, None] * fuzzy).sum(axis=1)
         sample_terms = all_term - in_class
-        gradients_ =  (1 / self.sigma) * sample_terms.sum(axis=0)\
-                   - 2 * self.reg * weights
-        return gradients_
-
-
-class ExponentialKernel(KernelMixin):
-    """Class for the exponential kernel function used in original NCFS paper."""
-
-    def __init__(self, sigma, reg):
-        """
-        Class for the exponential kernel function used in original NCFS paper.
-
-        Extends KernelMixin.
-
-        Parameters
-        ----------
-        sigma : float
-            Scaling parameter sigma as mentioned in original paper.
-        reg : float
-            Regularization parameter.
-        weights : numpy.ndarray
-            Initial vector of feature weights.
-        n_jobs : int, optional
-            Number of jobs to issue when calculating feature gradients. Default
-            is 1.
-
-        Methods
-        -------
-        transform():
-            Apply the kernel tranformation to a distance matrix.
-
-        gradients():
-            Get current gradients for each feature
-        update_weights():
-            Update feature weights to a new value.
-        """
-        super(ExponentialKernel, self).__init__(sigma, reg)
-
-    def transform(self, distance_matrix):
-        """
-        Apply the kernel function to each sample distance in a distance matrix.
-        
-        Parameters
-        ----------
-        distance_matrix : numpy.ndarray
-            A (sample x sample) distance matrix.
-        
-        Returns
-        -------
-        numpy.ndarray
-            A (sampel x sample) kernel distance matrix.
-        """
-        return np.exp(-1 * distance_matrix / self.sigma, dtype=np.float64)
+        self.gradients_ = (1 / self.sigma) * sample_terms.sum(axis=0)\
+                        - 2 * self.reg * weights
+        return self.gradients_
 
 
 class NCFS(base.BaseEstimator, base.TransformerMixin):
@@ -365,11 +344,11 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                              'Got {}.'.format(type(y)))
         if y.shape[0] != X.shape[0]:
             raise ValueError('`X` and `y` must have the same row numbers.')
-
+        n_samples, n_features = X.shape
         # intialize kernel function
         if self.kernel == 'exponential':
             X = NCFS.__check_X(X)
-            self.kernel_ = ExponentialKernel(self.sigma, self.reg)
+            self.kernel_ = ExponentialKernel(self.sigma, self.reg, n_features)
         else:
             raise ValueError('Unsupported kernel function: {}'\
                              .format(self.kernel))
@@ -390,7 +369,6 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             weighted_dist = distances.partials[self.metric]
         
         self.distance_ = weighted_dist(X)
-        n_samples, n_features = X.shape
         # initialize all weights as 1
         self.coef_ = np.ones(n_features, dtype=np.float64)
         # construct adjacency matrix of class membership for matrix mult. 
@@ -573,8 +551,9 @@ def main():
         end = timer()
         times[i] = end - start
     print("Average execution time in seconds: {}".format(np.mean(times)))
-    print(np.argsort(-1 * f_select.coef_)[:10])
-    print(f_select.coef_[0], f_select.coef_[100])
+    sorted_coef = np.argsort(-1 * f_select.coef_)
+    print(sorted_coef[:10])
+    print(f_select.coef_[0], f_select.coef_[100], f_select.coef_[sorted_coef[2]])
 
 if __name__ == '__main__':
     main()
