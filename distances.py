@@ -2,8 +2,8 @@ import numpy as np
 import numba
 
 _mock_ones = np.ones(2, dtype=np.float64)
+# implementation/syntax inspired by UMAP.distances
 
-# implementation/syntax of distance functions inspired by UMAP.distances
 @numba.njit()
 def manhattan(x, y, w=_mock_ones):
     """Calculate the L1-distance between two vectors."""
@@ -41,23 +41,65 @@ def covariance(x, y, w=_mock_ones):
     result *= 1.0 / (x.shape[0] - 1)
     return result
 
-
 @numba.njit()
 def variance(x, w=_mock_ones):
     """Caluculate the sample variance of a vector."""
-    return covariance(x, x, w=w)
+    # calculate average values over vectors
+    x_bar = 0.0
+    for i in range(x.shape[0]):
+        x_bar += x[i]
+    x_bar *= 1.0 / x.shape[0]
+    return fitted_variance(x, x_bar, w)
+
+@numba.njit()
+def fitted_variance(x, x_bar, w=_mock_ones):
+    result = 0.0
+    for i in range(x.shape[0]):
+        result += w[i] * (x[i] - x_bar) ** 2
+    result *= 1.0 / (x.shape[0] - 1)
+    return result
 
 
 @numba.njit()
 def phi_s(x, y, w=_mock_ones):
     """Calculate the phi_s proportionality metric between two vectors."""
+    if np.all(x == y):
+        return 0.0
     return variance(x - y, w) / variance(x + y, w)
+
+@numba.njit()
+def fitted_phi_s(x, y, diff_bar, sum_bar, w=_mock_ones):
+    if np.all(x == y):
+        return 0.0
+    return (fitted_variance(x - y, diff_bar, w) /\
+            fitted_variance(x + y, sum_bar, w))
+            
+@numba.njit()
+def fitted_rho_p(x, y, diff_bar, x_bar, y_bar, w=_mock_ones):
+    if np.all(x == y):
+        return 1.0
+    result = fitted_variance(x - y, diff_bar, w)
+    result /= (fitted_variance(x, x_bar, w) +\
+               fitted_variance(y, y_bar, w))
+    return 1.0 - result
 
 
 @numba.njit()
 def rho_p(x, y, w=_mock_ones):
     """Calculate the rho_p proportionality metric between two vectors."""
-    return 1 - variance(x - y, w) / (variance(x, w) + variance(y, w))
+    if np.all(x == y):
+        return 1.0
+    return 1.0 - variance(x - y, w) / (variance(x, w) + variance(y, w))
+
+
+supported_distances = {'l1': manhattan,
+                       'cityblock': manhattan,
+                       'taxicab': manhattan,
+                       'manhattan': manhattan,
+                       'l2': sqeuclidean,
+                       'sqeuclidean': sqeuclidean,
+                       'phi_s': phi_s,
+                       'rho_p': rho_p}
 
 @numba.njit()
 def symmetric_pdist(X, w, dist, func):
@@ -243,11 +285,12 @@ class PhiS(object):
             for j in range(X.shape[0]):
                 self.D_[i, j, :] = 4.0 / (X.shape[1] - 1)\
                                  * (cov[i, j]\
-                                 * (centered[i, :] ** 2 + centered[j, :] ** 2)\
+                                 * (np.power(centered[i, :], 2)\
+                                    + np.power(centered[j, :], 2))\
                                  - (centered[i, :] * centered[j, :])\
                                  * (cov[i, i] + cov[j, j]))\
-                                 / ((cov[i, i] + cov[j, j]\
-                                     + 2 * cov[i, j]) ** 2)
+                                 / (np.power(cov[i, i] + cov[j, j]\
+                                             + 2 * cov[i, j], 2))
 
     def partials(self, weights):
         return self.D_ * weights
@@ -287,10 +330,11 @@ class RhoP(object):
             for j in range(X.shape[0]):
                 self.D_[i, j, :] = 4.0 / (X.shape[1] - 1)\
                                  * (cov[i, j]\
-                                 * (centered[i, :] ** 2 + centered[j, :] ** 2)\
+                                 * (np.power(centered[i, :], 2)\
+                                    + np.power(centered[j, :], 2))\
                                  - (centered[i, :] * centered[j, :])\
                                  * (cov[i, i] + cov[j, j])) \
-                                 / ((cov[i, i] + cov[j, j]) ** 2)
+                                 / (np.power(cov[i, i] + cov[j, j]), 2)
 
     def partials(self, weights):
         return self.D_ * -weights
@@ -359,7 +403,7 @@ class SqEuclidean(object):
     def __fit(self, X):
         for i in range(X.shape[0]):
             for j in range(X.shape[0]):
-                self.D_[i, j, :] = 2 * (X[i, :] - X[j, :]) ** 2 
+                self.D_[i, j, :] = 2 * np.power((X[i, :] - X[j, :]), 2)
 
     def partials(self, weights):
         return self.D_ * weights
