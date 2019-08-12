@@ -748,8 +748,8 @@ def toy_dataset(n_features=1000):
 
 def main():
     X, y = toy_dataset(n_features=1000)
-    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='cityblock',
-                    kernel='gaussian', solver='ncfs', stochastic=False)
+    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='sqeuclidean',
+                    kernel='exponential', solver='ncfs', stochastic=False)
     from timeit import default_timer as timer
     times = np.zeros(1)
     # previous 181.82286000379972
