@@ -104,32 +104,31 @@ class NCFSOptimizer(object):
                 self.alpha *= 0.4
         return steps
 
-@numba.njit(parallel=True)
-def exp_grad(p_reference, p_correct, partial, class_matrix, weight, reg, sigma):
-    fuzzy = p_reference * partial
-    all_term = p_correct * fuzzy.sum(axis=1)
-    in_class = (class_matrix * fuzzy).sum(axis=1)
-    val =  0.0
-    for i in numba.prange(all_term.size):
-        val += (all_term[i] - in_class[i])
-    return ((1.0 / sigma) * val - 2.0 * reg * weight)
 
 @numba.njit(parallel=True)
-def feature_gradients(p_reference, partials, weights, class_matrix,
-                        reg, sigma, gradients):
-    p_correct = p_reference.sum(axis=1)
-    for l in numba.prange(gradients.size):
-        gradients[l] = exp_grad(p_reference, p_correct,
-                                partials[:, :, l], class_matrix, weights[l],
-                                    reg, sigma)
+def exp_gradient(p_reference, p_correct, partial, class_matrix,
+                 weight, reg, sigma):
+    # weighted partial matrix D_ij = d_ij * p_ij, p_ii = 0
+    fuzzy_partials = partial * p_reference
+    # calculate p_i * sum(D_ij), j from 0 to N
+    all_term = p_correct * fuzzy_partials.sum(axis=1)
+    # weighted in-class distances using adjacency matrix,
+    in_class_term = np.sum(fuzzy_partials * class_matrix, axis=1)
+    val =  0.0
+    for i in range(all_term.size):
+        val += (all_term[i] - in_class_term[i])
+    out = ((1.0 / sigma) * val - 2.0 * reg * weight)
+    return out
+
+@numba.njit(parallel=True)
+def feature_gradients(p_reference, p_correct, partials, weights,
+                      class_matrix, reg, sigma, gradients):
+    for l in range(gradients.size):
+        gradients[l] = exp_gradient(p_reference, p_correct, partials[:, :, l],
+                                    class_matrix, weights[l], reg, sigma)
     return gradients
 
-kernel_spec = [
-    ('sigma', numba.float64),
-    ('reg', numba.float64),
-    ('gradients_', numba.float64[:])
-]
-# @numba.jitclass(kernel_spec) 
+ 
 class ExponentialKernel(object):
     """Base class for kernel functions."""
 
@@ -205,16 +204,10 @@ class ExponentialKernel(object):
             Gradient vector for each feature with respect to the objective
             function.
         """
-        # self.gradients_ = feature_gradients(p_reference, partials, weights,
-        #                                     class_matrix, self.reg, self.sigma,
-        #                                     self.gradients_)
-        fuzzy = p_reference[:, :, None] * partials
         p_correct = np.sum(p_reference * class_matrix, axis=1)
-        all_term = p_correct[:, None] * fuzzy.sum(axis=1)
-        in_class = (class_matrix[:, :, None] * fuzzy).sum(axis=1)
-        sample_terms = all_term - in_class
-        self.gradients_ = (1 / self.sigma) * sample_terms.sum(axis=0)\
-                        - 2 * self.reg * weights
+        self.gradients_ = feature_gradients(p_reference, p_correct, partials,
+                                            weights, class_matrix, self.reg,
+                                            self.sigma, self.gradients_)
         return self.gradients_
 
 
@@ -536,7 +529,7 @@ def toy_dataset(n_features=1000):
 
 def main():
     X, y = toy_dataset(n_features=1000)
-    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='cityblock',
+    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='l2',
                     kernel='exponential', solver='ncfs')
     from timeit import default_timer as timer
     times = np.zeros(1)
