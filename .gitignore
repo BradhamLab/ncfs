@@ -1,0 +1,10 @@
+*.png
+*.gz
+*.aux
+*fdb_latexmk
+*.fls
+*.log
+data/*
+notebooks/*
+.vscode/*
+__pycache__/*
