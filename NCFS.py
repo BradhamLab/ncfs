@@ -17,46 +17,6 @@ from ncfs_expanded import distances
 # import distances
 
 
-@numba.njit()
-def symmetric_pdist(x, w, dist, func):
-    for i in range(x.shape[0]):
-        u = x[i, :]
-        for j in range(i + 1, x.shape[0]):
-            v = x[j, :]
-            res = func(u, v, w)
-            dist[i, j] = res
-            dist[j, i] = res
-
-@numba.jit() # Python mode to allow array creation. For loop will be njit per
-def numba_feature_distance(data_matrix, func):
-    """
-    Calculate the pairwise distance between each sample in each feature.
-    
-    Parameters
-    ----------
-    data_matrix : numpy.ndarray
-        An (N x M) data matrix where N is the number of samples and M is the
-        number of features.
-    metric : str, function, optional
-        Distance metric to use. The default is 'cityblock'.
-    
-    Returns
-    -------
-    numpy.ndarray
-        An (M x N X N) numpy array where array[0] is the distance matrix
-        representing pairwise distances between samples in feature 0.
-    """
-    # matrix to hold pairwise distances between samples in each feature
-    dists = np.zeros((data_matrix.shape[1],
-                      data_matrix.shape[0],
-                      data_matrix.shape[0]))
-    # sample weights of 1 for numba distances 
-    weights = np.ones(data_matrix.shape[0])
-    for l in range(data_matrix.shape[1]):
-        symmetric_pdist(data_matrix[:, l].reshape(-1, 1), weights,
-                        dists[l], func)
-    return dists
-
 class NCFSOptimizer(object):
     """Gradient ascent/descent optimization following NCFS protocol."""
 
@@ -357,7 +317,6 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                              format(self.metric))
         else:
             self.metric_ = distances.supported_distances[self.metric]
-            feature_distances = numba_feature_distance(X, func=self.metric_)
             # initialize WeightedDistance object for partial calculations.
             weighted_dist = distances.partials[self.metric]
         
@@ -373,8 +332,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
 
         objective, loss = 0, np.inf
         while abs(loss) > self.eta:
-            new_objective = self.__fit(X, class_matrix, objective,
-                                       feature_distances)
+            new_objective = self.__fit(X, class_matrix, objective)
             loss = objective - new_objective
             objective = new_objective
 
@@ -417,7 +375,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             X = NCFS.__check_X(X)
         return X * self.coef_ ** 2
 
-    def __fit(self, X, class_matrix, objective, feature_distances):
+    def __fit(self, X, class_matrix, objective):
         """
         Underlying method to fit NCFS model.
         
@@ -437,14 +395,12 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         """
         # organize as distance matrix by summing along feature index
         # calculate D_w(x_i, x_j): sum(w_l^2 * |x_il - x_jl], l) for all i,j
-        distances = np.sum(feature_distances
-                           * self.coef_[:, np.newaxis, np.newaxis]**2,
-                           axis=0)
+        dmat = np.zeros((X.shape[0], X.shape[0]), dtype=np.float64)
+        distances.symmetric_pdist(X, self.coef_, dmat, self.metric_)
         # calculate K(D_w(x_i, x_j)) for all i, j pairs
-        p_reference = self.kernel_.transform(distances)
-        # set p_ii = 0, can't select self in leave-one-out
+        p_reference = self.kernel_.transform(dmat)
+        # set p_ii = 0, can't select self as reference sample
         np.fill_diagonal(p_reference, 0.0)
-
         # add pseudocount if necessary to avoid dividing by zero
         row_sums = p_reference.sum(axis=1)
         n_zeros = sum(row_sums == 0)
@@ -455,14 +411,11 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             row_sums += pseudocount
         scale_factors = 1 / (row_sums)
         p_reference = (p_reference.T * scale_factors).T
-
         # calculate partial derivates for each sample x sample x feature trip
         partials = self.distance_.partials(self.coef_)
-
         # caclulate weight adjustments
         gradients = self.kernel_.gradients(p_reference, partials, self.coef_,
                                            class_matrix)
-            
         # calculate objective function
         new_objective = (np.sum(p_reference * class_matrix) \
                       - self.reg * np.dot(self.coef_, self.coef_))
@@ -529,7 +482,7 @@ def toy_dataset(n_features=1000):
 
 def main():
     X, y = toy_dataset(n_features=1000)
-    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='l2',
+    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='phi_s',
                     kernel='exponential', solver='ncfs')
     from timeit import default_timer as timer
     times = np.zeros(1)
