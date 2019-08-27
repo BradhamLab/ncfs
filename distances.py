@@ -41,6 +41,7 @@ def covariance(x, y, w=_mock_ones):
     result *= 1.0 / (x.shape[0] - 1)
     return result
 
+
 @numba.njit()
 def variance(x, w=_mock_ones):
     """Caluculate the sample variance of a vector."""
@@ -49,10 +50,6 @@ def variance(x, w=_mock_ones):
     for i in range(x.shape[0]):
         x_bar += x[i]
     x_bar *= 1.0 / x.shape[0]
-    return fitted_variance(x, x_bar, w)
-
-@numba.njit()
-def fitted_variance(x, x_bar, w=_mock_ones):
     result = 0.0
     for i in range(x.shape[0]):
         result += w[i] * (x[i] - x_bar) ** 2
@@ -66,22 +63,6 @@ def phi_s(x, y, w=_mock_ones):
     if np.all(x == y):
         return 0.0
     return variance(x - y, w) / variance(x + y, w)
-
-@numba.njit()
-def fitted_phi_s(x, y, diff_bar, sum_bar, w=_mock_ones):
-    if np.all(x == y):
-        return 0.0
-    return (fitted_variance(x - y, diff_bar, w) /\
-            fitted_variance(x + y, sum_bar, w))
-            
-@numba.njit()
-def fitted_rho_p(x, y, diff_bar, x_bar, y_bar, w=_mock_ones):
-    if np.all(x == y):
-        return 1.0
-    result = fitted_variance(x - y, diff_bar, w)
-    result /= (fitted_variance(x, x_bar, w) +\
-               fitted_variance(y, y_bar, w))
-    return 1.0 - result
 
 
 @numba.njit()
@@ -101,7 +82,7 @@ supported_distances = {'l1': manhattan,
                        'phi_s': phi_s,
                        'rho_p': rho_p}
 
-@numba.njit()
+@numba.njit(parallel=True)
 def symmetric_pdist(X, w, dist, func):
     """
     Find the pairwise distances between all rows in a data matrix.
@@ -129,6 +110,63 @@ def symmetric_pdist(X, w, dist, func):
             dist[i, j] = res
             dist[j, i] = res
 
+# TODO: Might need to transpose matrix
+def log_ratio(X, ref=None):
+    """
+    Calculate the log-ratio matrix of a data matrix.
+    
+    Parameters
+    ----------
+    X : numpy.ndarray
+        A (samples x features) data matrix. 
+    ref : int, numpy.ndarray, optional
+        Reference value for log-ratio calcuation. By default None, and the
+        centered-log ratio transformation is used. Whereby
+
+        .. math::
+            clr(X_{ij}) = \log(\frac{X_ij} / G(X_i))
+        
+        and
+
+        .. math::
+           g(X_i) = \left ( \prod \limits_{j=1}^{M} X_{ij} \right ) ^ {(1/M)}
+        
+        If `ref` is an integer, it is assumed to be a column index in `X`, and 
+
+        .. math::
+            g(X_i) = X_{:, ref}
+        
+        Otherwise, if `ref` is a numpy array of feature length:
+
+        .. math::
+            g(X_i) = `ref`
+        
+        
+    Returns
+    -------
+    numpy.ndarray
+        Log-ratio transformed data matrix.
+    """
+    if np.any(X == 0) is None:
+        print("Replacing zeros with next smallest values")
+        X[X == 0] = np.min(X[X != 0])
+    log_X = np.log(X)
+    if ref is None:
+        ref = np.mean(log_X, axis=1)
+    elif isinstance(ref, int):
+        if not 0 < ref < X.shape[1]:
+            raise ValueError("Reference index should be between 0 and "
+                             "{}".format(X.shape[1]))
+        ref = log_X[:, ref]
+    elif isinstance(ref, np.ndarray):
+        if ref.size != X.shape[1]:
+            raise ValueError("Expected reference array of size "
+                             "{}".format(X.shape[1]))
+    else:
+        raise ValueError("Unexpected input type for `ref`: {}".format(
+                         type(ref)))
+    return log_X - (np.ones_like(X).T * ref).T 
+    
 
 class WeightedDistance(object):
     r"""
@@ -334,7 +372,7 @@ class RhoP(object):
                                     + np.power(centered[j, :], 2))\
                                  - (centered[i, :] * centered[j, :])\
                                  * (cov[i, i] + cov[j, j])) \
-                                 / (np.power(cov[i, i] + cov[j, j]), 2)
+                                 / (np.power(cov[i, i] + cov[j, j], 2))
 
     def partials(self, weights):
         return self.D_ * -weights
