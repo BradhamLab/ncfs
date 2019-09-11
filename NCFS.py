@@ -184,7 +184,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
     """
 
     def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
-                 metric='cityblock', kernel='gaussian', solver='ncfs'):
+                 metric='cityblock', kernel='exponential', solver='ncfs'):
         """
         Class to perform Neighborhood Component Feature Selection 
 
