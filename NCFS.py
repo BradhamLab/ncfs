@@ -482,7 +482,7 @@ def toy_dataset(n_features=1000):
 
 def main():
     X, y = toy_dataset(n_features=1000)
-    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='phi_s',
+    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='rho_p',
                     kernel='exponential', solver='ncfs')
     from timeit import default_timer as timer
     times = np.zeros(1)
