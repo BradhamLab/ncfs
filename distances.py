@@ -112,7 +112,7 @@ def symmetric_pdist(X, w, dist, func):
 
 # TODO: Might need to transpose matrix
 def log_ratio(X, ref=None):
-    """
+    r"""
     Calculate the log-ratio matrix of a data matrix.
     
     Parameters
@@ -298,7 +298,7 @@ class PhiS(object):
         \phi_s(X, Y) = \frac{\Var(X - Y)}{\Var(X + Y)}
     """
 
-    def __init__(self, X):
+    def __init__(self, X, D):
         r"""
         Class for quick calculuations of
         :math:`\frac{\partial \phi_s}{\partial w_l}`.
@@ -310,8 +310,7 @@ class PhiS(object):
         w : numpy.ndarray
             A feature-length vector 
         """
-        self.D_ = np.ones((X.shape[0], X.shape[0], X.shape[1]),
-                          dtype=np.float64)
+        self.D_ = D
         centered = X - (np.ones_like(X.T) * np_mean(X, 1)).T
         cov = np.cov(X, ddof=1)
         self.__fit(X, centered, cov)
@@ -344,7 +343,7 @@ class RhoP(object):
         \rho_s(X, Y) = \frac{\Var(X - Y)}{\Var(X) + \Var(Y)}
     """
 
-    def __init__(self, X):
+    def __init__(self, X, D):
         r"""
         Class for quick calculuations of
         :math:`\frac{\partial \rho_p}{\partial w_l}`.
@@ -353,11 +352,10 @@ class RhoP(object):
         ----------
         X : numpy.ndarray
             A (sample x feature) data matrix.
-        w : numpy.ndarray
-            A feature-length vector 
+        D : numpy.memmap
+            A (sample x sample x feature) distance matrix 
         """
-        self.D_ = np.ones((X.shape[0], X.shape[0], X.shape[1]),
-                            dtype=np.float64)
+        self.D_ = D
         centered = X - (np.ones_like(X.T) * np_mean(X, 1)).T
         cov = np.cov(X, ddof=1)
         self.__fit(X, centered, cov)
@@ -422,7 +420,7 @@ class SqEuclidean(object):
         L2(X, Y) = \sum \limits_{i = 1}^N w_l^2 (x_i - y_i)^2 
     """
 
-    def __init__(self, X):
+    def __init__(self, X, D):
         r"""
         Class for quick calculuations of
         :math:`\frac{\partial L2}{\partial w_l}`.
@@ -431,11 +429,10 @@ class SqEuclidean(object):
         ----------
         X : numpy.ndarray
             A (sample x feature) data matrix.
-        w : numpy.ndarray
-            A feature-length vector 
+        D : numpy.memmap
+            A (sample x sample x feature) distance matrix
         """
-        self.D_ = np.ones((X.shape[0], X.shape[0], X.shape[1]),
-                          dtype=np.float64)
+        self.D_ = D
         self.__fit(X)
 
     def __fit(self, X):
