@@ -322,7 +322,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             # initialize WeightedDistance object for partial calculations.
             weighted_dist = distances.partials[self.metric]
             # create distance memmap file
-            memfile = os.path.join(mkdtemp() + 'distance.dat')
+            memfile = os.path.join(mkdtemp(), 'distance.dat')
             self.distance_ = weighted_dist(X, np.memmap(memfile,
                                                         dtype='float64',
                                                         mode='w+',
@@ -343,8 +343,12 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             new_objective = self.__fit(X, class_matrix, objective)
             loss = objective - new_objective
             objective = new_objective
-        # weighted_dist.flush()
         self.score_ = objective
+        # delete stored temporary file
+        fn = self.distance_.D_.filename
+        print(fn)
+        os.remove(fn)
+        os.removedirs(os.path.split(fn)[0])
         return self
 
     def transform(self, X):

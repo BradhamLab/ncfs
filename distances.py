@@ -411,8 +411,6 @@ class Manhattan(WeightedDistance):
     def partials(self, weights):
         return self.D_ * weights
 
-    def flush(self):
-        del self.D_
 
 @numba.jitclass(spec)
 class SqEuclidean(object):
