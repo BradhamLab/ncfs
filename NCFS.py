@@ -7,6 +7,8 @@ https://doi.org/10.4304/jcp.7.1.161-168
 
 Author : Dakota Hawkins
 """
+from tempfile import mkdtemp
+import os
 
 import numba
 import numpy as np
@@ -75,7 +77,7 @@ def exp_gradient(p_reference, p_correct, partial, class_matrix,
     # weighted in-class distances using adjacency matrix,
     in_class_term = np.sum(fuzzy_partials * class_matrix, axis=1)
     val =  0.0
-    for i in range(all_term.size):
+    for i in numba.prange(all_term.size):
         val += (all_term[i] - in_class_term[i])
     out = ((1.0 / sigma) * val - 2.0 * reg * weight)
     return out
@@ -83,7 +85,7 @@ def exp_gradient(p_reference, p_correct, partial, class_matrix,
 @numba.njit(parallel=True)
 def feature_gradients(p_reference, p_correct, partials, weights,
                       class_matrix, reg, sigma, gradients):
-    for l in range(gradients.size):
+    for l in numba.prange(gradients.size):
         gradients[l] = exp_gradient(p_reference, p_correct, partials[:, :, l],
                                     class_matrix, weights[l], reg, sigma)
     return gradients
@@ -319,8 +321,14 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             self.metric_ = distances.supported_distances[self.metric]
             # initialize WeightedDistance object for partial calculations.
             weighted_dist = distances.partials[self.metric]
-        
-        self.distance_ = weighted_dist(X)
+            # create distance memmap file
+            memfile = os.path.join(mkdtemp() + 'distance.dat')
+            self.distance_ = weighted_dist(X, np.memmap(memfile,
+                                                        dtype='float64',
+                                                        mode='w+',
+                                                        shape=(X.shape[0],
+                                                               X.shape[0],
+                                                               X.shape[1])))
         # initialize all weights as 1
         self.coef_ = np.ones(n_features, dtype=np.float64)
         # construct adjacency matrix of class membership for matrix mult. 
@@ -335,7 +343,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             new_objective = self.__fit(X, class_matrix, objective)
             loss = objective - new_objective
             objective = new_objective
-
+        # weighted_dist.flush()
         self.score_ = objective
         return self
 
@@ -482,7 +490,7 @@ def toy_dataset(n_features=1000):
 
 def main():
     X, y = toy_dataset(n_features=1000)
-    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='rho_p',
+    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='cityblock',
                     kernel='exponential', solver='ncfs')
     from timeit import default_timer as timer
     times = np.zeros(1)
