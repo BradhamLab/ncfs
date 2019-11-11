@@ -102,9 +102,9 @@ def symmetric_pdist(X, w, dist, func):
         Numba compiled function to measure distance between rows. Assumed to be
         a symmetric measure.
     """
-    for i in range(X.shape[0]):
+    for i in numba.prange(X.shape[0]):
         u = X[i, :]
-        for j in range(i + 1, X.shape[0]):
+        for j in numba.prange(i + 1, X.shape[0]):
             v = X[j, :]
             res = func(u, v, w)
             dist[i, j] = res
@@ -388,7 +388,7 @@ class Manhattan(WeightedDistance):
         L1(X, Y) = \sum \limits_{i = 1}^N w_l^2| x_i - y_i |
     """
 
-    def __init__(self, X):
+    def __init__(self, X, D):
         r"""
         Class for quick calculuations of
         :math:`\frac{\partial L1}{\partial w_l}`.
@@ -397,11 +397,10 @@ class Manhattan(WeightedDistance):
         ----------
         X : numpy.ndarray
             A (sample x feature) data matrix.
-        w : numpy.ndarray
-            A feature-length vector 
+        D : numpy.memmap
+            A (sample x sample x feature) distance matrix
         """
-        self.D_ = np.ones((X.shape[0], X.shape[0], X.shape[1]),
-                          dtype=np.float64)
+        self.D_ = D
         self.__fit(X)
 
     def __fit(self, X):
@@ -411,6 +410,9 @@ class Manhattan(WeightedDistance):
 
     def partials(self, weights):
         return self.D_ * weights
+
+    def flush(self):
+        del self.D_
 
 @numba.jitclass(spec)
 class SqEuclidean(object):
