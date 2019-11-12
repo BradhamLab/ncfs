@@ -346,7 +346,6 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.score_ = objective
         # delete stored temporary file
         fn = self.distance_.D_.filename
-        print(fn)
         os.remove(fn)
         os.removedirs(os.path.split(fn)[0])
         return self
