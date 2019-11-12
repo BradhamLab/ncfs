@@ -7,6 +7,8 @@ https://doi.org/10.4304/jcp.7.1.161-168
 
 Author : Dakota Hawkins
 """
+from tempfile import mkdtemp
+import os
 
 import numpy as np
 from scipy import spatial
@@ -31,8 +33,12 @@ def pairwise_feature_distance(data_matrix, metric='cityblock'):
         representing pairwise distances between samples in feature 0.
     """
     # matrix to hold pairwise distances between samples in each feature
-    dists = np.zeros((data_matrix.shape[1],
-                        data_matrix.shape[0], data_matrix.shape[0]))
+    # dists = np.zeros((data_matrix.shape[1],
+    #                     data_matrix.shape[0], data_matrix.shape[0]))
+    memfile = os.path.join(mkdtemp(), 'distance.dat')
+    dists = np.memmap(memfile, dtype='float64', mode='w+',
+                      shape=(data_matrix.shape[1], data_matrix.shape[0],
+                             data_matrix.shape[0]))
     for j in range(data_matrix.shape[1]):
         dists[j] = spatial.distance.squareform(
                         spatial.distance.pdist(data_matrix[:, j].reshape(-1, 1),
@@ -598,8 +604,11 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                                            feature_distances)
             loss = objective - new_objective
             objective = new_objective
-
         self.score_ = objective
+        # remove tempory memmap file
+        fn = feature_distances.filename
+        os.remove(fn)
+        os.removedirs(os.path.split(fn)[0])
         return self
 
     def transform(self, X):
