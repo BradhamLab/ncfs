@@ -264,27 +264,16 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             print('Best to have values in X between 0 and 1.')
         return X.astype(np.float64)
 
-    def fit(self, X, y):
+    def _instantiate_model(self, X, y, sample_weight):
         """
-        Fit feature weights using Neighborhood Component Feature Selection.
-
-        Fit feature weights using Neighborhood Component Feature Selection.
-        Weights features in `X` by their ability to distinguish classes in `y`.
-        Coefficients are set to the instance variable `self.coef_`. 
-
+        Check input parameters and instantiate base model.
+        
         Parameters
         ----------
         X : numpy.ndarray
-            An n x p data matrix where n is the number of samples, and p is the
-            number of features.
+            A (sample x feature) data matrix.
         y : numpy.array
             List of pre-defined classes for each sample in `X`.
-
-        Returns
-        -------
-        NCFS
-            Fitted NCFS object with weights stored in the `.coef_` instance
-            variable.
         """
         if not 0 < self.alpha < 1:
             raise ValueError("Alpha value should be between 0 and 1.")
@@ -319,18 +308,60 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                              format(self.metric))
         else:
             self.metric_ = distances.supported_distances[self.metric]
-            # initialize WeightedDistance object for partial calculations.
-            weighted_dist = distances.partials[self.metric]
-            # create distance memmap file
-            memfile = os.path.join(mkdtemp(), 'distance.dat')
-            self.distance_ = weighted_dist(X, np.memmap(memfile,
-                                                        dtype='float64',
-                                                        mode='w+',
-                                                        shape=(X.shape[0],
-                                                               X.shape[0],
-                                                               X.shape[1])))
         # initialize all weights as 1
         self.coef_ = np.ones(n_features, dtype=np.float64)
+        # establish sample weights
+        if sample_weight is None:
+            self.sample_weights = np.ones(n_samples)
+        elif isinstance(sample_weight, np.ndarray):
+            self.sample_weights = sample_weight
+        elif isinstance(sample_weight, str) and sample_weight == 'balanced':
+            class_weights = {c: 1 / x for c, x in zip(*np.unique(y,
+                                                return_counts=True))}
+            self.sample_weights = np.array([class_weights[x] for x in y])
+        else:
+            raise ValueError("Unexpected value for `sample_weight`: "
+                             "{}".format(sample_weight))
+
+
+    def fit(self, X, y, sample_weight=None):
+        """
+        Fit feature weights using Neighborhood Component Feature Selection.
+
+        Fit feature weights using Neighborhood Component Feature Selection.
+        Weights features in `X` by their ability to distinguish classes in `y`.
+        Coefficients are set to the instance variable `self.coef_`. 
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            An n x p data matrix where n is the number of samples, and p is the
+            number of features.
+        y : numpy.array
+            List of pre-defined classes for each sample in `X`.
+        
+
+        Returns
+        -------
+        NCFS
+            Fitted NCFS object with weights stored in the `.coef_` instance
+            variable.
+        """
+        self._instantiate_model(X, y, sample_weight)
+        self._partial_fit(X, y)
+        
+    def _partial_fit(self, X, y):
+        n_samples, n_features = X.shape
+        # initialize WeightedDistance object for partial calculations.
+        weighted_dist = distances.partials[self.metric]
+        # create distance memmap file
+        memfile = os.path.join(mkdtemp(), 'distance.dat')
+        self.distance_ = weighted_dist(X, np.memmap(memfile,
+                                                    dtype='float64',
+                                                    mode='w+',
+                                                    shape=(n_samples,
+                                                           n_samples,
+                                                           n_features)))
         # construct adjacency matrix of class membership for matrix mult. 
         class_matrix = np.zeros((n_samples, n_samples), np.float64)
         for i in range(n_samples):
@@ -417,7 +448,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         n_zeros = sum(row_sums == 0)
         if n_zeros > 0:
             print('Adding pseudocounts to distance matrix to avoid ' +
-                    'dividing by zero.')
+                  'dividing by zero.')
             pseudocount = np.exp(-20)
             row_sums += pseudocount
         scale_factors = 1 / (row_sums)
@@ -428,15 +459,15 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         gradients = self.kernel_.gradients(p_reference, partials, self.coef_,
                                            class_matrix)
         # calculate objective function
-        new_objective = (np.sum(p_reference * class_matrix) \
-                      - self.reg * np.dot(self.coef_, self.coef_))
+        new_obj = ((p_reference * class_matrix * self.sample_weights).sum()\
+                - self.reg * np.dot(self.coef_, self.coef_))
         # calculate loss from previous objective function
-        loss = new_objective - objective
+        loss = new_obj - objective
         # update weights
         deltas = self.solver_.get_steps(gradients, loss)
         self.coef_ = self.coef_ + deltas
         # return objective score for new iteration
-        return new_objective
+        return new_obj
 
 
 def toy_dataset(n_features=1000):
