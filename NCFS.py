@@ -513,7 +513,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             print('Best to have values in X between 0 and 1.')
         return X.astype(np.float64)
 
-    def fit(self, X, y):
+    def fit(self, X, y, sample_weight=None):
         """
         Fit feature weights using Neighborhood Component Feature Selection.
 
@@ -579,6 +579,9 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         else:
             raise ValueError('Unsupported gradient ascent method ' +
                              '{}'.format(self.solver))
+        # weigh samples by class occurrence
+        weight_dict = {x: 1 / c for x, c in zip(*np.unique(y, return_counts=True))}
+        self.sample_weights = np.array([weight_dict[x] for x in y])
         # construct adjacency matrix of class membership for matrix mult. 
         class_matrix = np.zeros((n_samples, n_samples), np.float64)
         for i in range(n_samples):
@@ -691,7 +694,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                                            class_matrix)
             
         # calculate objective function
-        new_objective = (np.sum(p_reference * class_matrix) \
+        new_objective = (np.sum(p_reference * class_matrix * self.sample_weights) \
                       - self.reg * np.dot(self.coef_, self.coef_))
         # calculate loss from previous objective function
         loss = new_objective - objective
