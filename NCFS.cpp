@@ -5,6 +5,15 @@
 using namespace Eigen;
 using namespace std;
 
+MatrixXd distance_matrix(MatrixXd &X);
+
+double fit_weights(MatrixXd &X, ArrayXd &class_matrix, double &objective,
+                   VectorXd &coefs, double &sigma, double &lambda,
+                   double &alpha);
+VectorXd fit(MatrixXd &X, ArrayXd &class_matrix, double &sigma, double &lambda,
+             double &alpha, double &eta);
+
+
 MatrixXd distance_matrix(MatrixXd X) {
     MatrixXd dist = MatrixXd::Zero(X.rows(), X.rows());
     for (int i = 0; i < X.rows(); i++) {
@@ -14,10 +23,10 @@ MatrixXd distance_matrix(MatrixXd X) {
         }
     }
     return dist;
-};
+}
 
-double __fit(MatrixXd &X, ArrayXd &class_matrix, double &objective,
-           VectorXd &coefs, double &sigma, double &lambda, double &alpha) {
+double fit_weights(MatrixXd X, ArrayXd class_matrix, double objective,
+                   VectorXd coefs, double sigma, double lambda, double alpha) {
     // instantiate vector of weight gradients
     VectorXd gradients = VectorXd::Ones(X.cols());
     // instatiate pseudocounts to avoid division by zero
@@ -63,11 +72,11 @@ VectorXd fit(MatrixXd X, ArrayXd class_matrix, double sigma, double lambda,
     // initialize weights
     VectorXd coefs = VectorXd::Ones(X.cols());
     while (abs(loss) > eta) {
-        __fit(X, class_matrix, objective, coefs, sigma, lambda, alpha);
+        fit_weights(X, class_matrix, objective, coefs, sigma, lambda, alpha);
     }
 
     return(coefs);
-};
+}
 
 int main() {
     MatrixXd m = MatrixXd::Random(10, 10);
