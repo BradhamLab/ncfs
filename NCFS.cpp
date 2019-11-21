@@ -18,9 +18,9 @@ template <typename Derived>
 void distance_matrix(const DenseBase<Derived>& X, DenseBase<Derived>& dist) {
     for (int i = 0; i < X.rows(); i++) {
         const auto &row = X.row(i);
-        // #ifdef _OPENMP
-        // #pragma omp parallel for shared(row)
-        // #endif
+        #ifdef _OPENMP
+        #pragma omp parallel for shared(row)
+        #endif
         for (int j = i + 1; j < X.rows(); j++) {
             // dist(i, j) = (X.row(i)- X.row(j)).template lpNorm<1>();
             dist(i, j) = (row - X.row(j)).cwiseAbs().sum();
