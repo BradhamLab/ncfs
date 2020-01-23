@@ -694,7 +694,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                                            class_matrix)
             
         # calculate objective function
-        new_objective = (np.sum(p_reference * class_matrix * self.sample_weights) \
+        new_objective = (np.sum((p_reference * class_matrix).T * self.sample_weights) \
                       - self.reg * np.dot(self.coef_, self.coef_))
         # calculate loss from previous objective function
         loss = new_objective - objective
