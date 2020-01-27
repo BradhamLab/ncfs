@@ -44,17 +44,19 @@ def covariance(x, y, w=_mock_ones):
 
 @numba.njit()
 def variance(x, w=_mock_ones):
-    """Caluculate the sample variance of a vector."""
-    # calculate average values over vectors
-    x_bar = 0.0
+    """Calculate sample weighted variance"""
+    mean = 0.0
+    sum_of_weights = 0.0
+    sum_of_squared_weights = 0.0
+    result = 0
     for i in range(x.shape[0]):
-        x_bar += x[i]
-    x_bar *= 1.0 / x.shape[0]
-    result = 0.0
+        mean += x[i] * w[i]
+        sum_of_weights += w[i]
+        sum_of_squared_weights += w[i] ** 2
+    mean = mean / sum_of_weights
     for i in range(x.shape[0]):
-        result += w[i] * (x[i] - x_bar) ** 2
-    result *= 1.0 / (x.shape[0] - 1)
-    return result
+        result += w[i] * (x[i] - mean) ** 2
+    return result / (sum_of_weights - sum_of_squared_weights / sum_of_weights)
 
 
 @numba.njit()
@@ -83,7 +85,7 @@ supported_distances = {'l1': manhattan,
                        'rho_p': rho_p}
 
 @numba.njit(parallel=True)
-def symmetric_pdist(X, w, dist, func):
+def symmetric_pdist(X, w, dist, func, symmetric = True):
     """
     Find the pairwise distances between all rows in a data matrix.
 
@@ -108,7 +110,11 @@ def symmetric_pdist(X, w, dist, func):
             v = X[j, :]
             res = func(u, v, w)
             dist[i, j] = res
-            dist[j, i] = res
+            if symmetric:
+                sym_res = res
+            else:
+                sym_res = func(v, u, w)
+            dist[j, i] = sym_res
 
 # TODO: Might need to transpose matrix
 def log_ratio(X, ref=None):
@@ -283,11 +289,74 @@ def np_mean(array, axis):
 @numba.njit()
 def np_sum(array, axis):
     return np_apply_along_axis(np.sum, axis, array)
-    
 
+@numba.njit(parallel=True)
+def fit_phi_s(X, w, means, ss):
+    """
+    Fit means, sum of squared erros, and sum of weights for PhiS derivatives.
+    
+    Parameters
+    ----------
+    X : numpy.ndarray
+        A (sample x feature) data matrix.
+    w : numpy.ndarray
+        A (feature) length vector of feature weights.
+    means : numpy.ndarray
+        A (2, sample, sample) tensor. Elements `means[0, i, j]` and
+        `means[1, i, j]` represent the weighted mean values between
+        `X[i, :] - x[j, :]` and `X[i, :] + X[j, :]`, respectively. 
+    ss : [type]
+        A (2, sample, sample) tensor. Elements `ss[0, i, j]` and `ss[1, i, j]`
+        represent the weighted sum of squared values between
+        `X[i, :] - x[j, :]` and `X[i, :] + X[j, :]`, respectively. 
+    
+    Returns
+    -------
+    [type]
+        [description]
+    """
+    sum_of_weights = 0.0
+    for x in w:
+        sum_of_weights += x
+    # once = True
+    for i in numba.prange(X.shape[0]):
+        for j in numba.prange(i, X.shape[0]):
+            for l in numba.prange(X.shape[1]):
+                if i == j:
+                    # calculate x - x means
+                    means[0, i, i] += 0
+                    means[1, i, i] += 2 * w[l] * X[i, l]
+                else:
+                    # calculate x - y means
+                    means[0, i, j] += w[l] * (X[i, l] - X[j, l])
+                    means[0, j, i] += w[l] * (X[j, l] - X[i, l])
+                    # calculate x + y means
+                    means[1, i, j] += w[l] * (X[i, l] + X[j, l])
+                    means[1, j, i] += w[l] * (X[j, l] + X[i, l])
+    
+            means[:, i, j] /= sum_of_weights
+            means[:, j, i] /= sum_of_weights
+    for i in numba.prange(X.shape[0]):
+        for j in numba.prange(i, X.shape[0]):
+            for l in numba.prange(X.shape[1]):
+                if i == j:
+                    # calculate x - x sum of squares
+                    ss[0, i, i] += -w[l] * means[0, i, l]
+                    ss[1, j, j] += (w[l] * (2 * X[i, l] - means[1, i, l]) ** 2)
+                else:
+                    # calculate x - y sum of squares
+                    ss[0, i, j] += (w[l] * (X[i, l] - X[j, l]) - means[0, i, l])**2
+                    ss[0, j, i] += (w[l] * (X[j, l] - X[i, l]) - means[0, j, l])**2
+                    # calculate x + y sum of squares
+                    ss[1, i, j] += (w[l] * (X[i, l] + X[j, l]) - means[1, i, l])**2
+                    ss[1, j, i] += (w[l] * (X[j, l] + X[i, l]) - means[1, j, l])**2
+    return sum_of_weights
 
 # specification of 
-spec = [('D_', numba.float64[:, :, :])]
+spec = [('v1_', numba.float64),
+        ('means_', numba.float64[:, :, :]),
+        ('ss_', numba.float64[:, :, :]),
+        ('w_', numba.float64[:])]
 @numba.jitclass(spec)
 class PhiS(object):
     r"""
@@ -298,7 +367,7 @@ class PhiS(object):
         \phi_s(X, Y) = \frac{\Var(X - Y)}{\Var(X + Y)}
     """
 
-    def __init__(self, X, D):
+    def __init__(self, X, w):
         r"""
         Class for quick calculuations of
         :math:`\frac{\partial \phi_s}{\partial w_l}`.
@@ -310,27 +379,82 @@ class PhiS(object):
         w : numpy.ndarray
             A feature-length vector 
         """
-        self.D_ = D
-        centered = X - (np.ones_like(X.T) * np_mean(X, 1)).T
-        cov = np.cov(X, ddof=1)
-        self.__fit(X, centered, cov)
-        # remove centered, cov
+        self.means_ = np.zeros((2, X.shape[0], X.shape[0]))
+        self.ss_ = np.zeros_like(self.means_)
+        self.v1_ = 0.0
+        self.__update_values(X, w)
 
-    def __fit(self, X, centered, cov):
-        """Fit tensor D_ to X."""
-        for i in range(X.shape[0]):
-            for j in range(X.shape[0]):
-                self.D_[i, j, :] = 4.0 / (X.shape[1] - 1)\
-                                 * (cov[i, j]\
-                                 * (np.power(centered[i, :], 2)\
-                                    + np.power(centered[j, :], 2))\
-                                 - (centered[i, :] * centered[j, :])\
-                                 * (cov[i, i] + cov[j, j]))\
-                                 / (np.power(cov[i, i] + cov[j, j]\
-                                             + 2 * cov[i, j], 2))
+    def __update_values(self, X, w):
+        """
+        Update calculated means, sum of squared means, and total feature weight.
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix
+        w : numpy.ndarray
+            a (feature) length vector of feature weights. 
+        """
+        self.w_ = w
+        self.means_ *= 0
+        self.ss_ *= 0
+        self.v1_ = fit_phi_s(X, self.w_, self.means_, self.ss_)
+       
 
-    def partials(self, weights):
-        return self.D_ * weights
+    def sample_feature_partial(self, X, i, j, l):
+        """
+        Calculate `d Phi(x_i, X_j) / d w_l`.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feautre) data matrix.
+        i : int
+            The ith sample in `X`.
+        j : int
+            The jth sample in `X`.
+        l : int
+            The lth feature in `X`.
+        
+        Returns
+        -------
+        float
+            Partial derivative of `Phi_s(x, y)` for feature `l`. 
+        """
+        x = X[i, l] - X[j, l]
+        y = X[i, l] + X[j, l]
+        return((2 * self.w_[l] * ((self.w_[l] - self.v1_) / self.v1_ ** 2) \
+                            * (self.ss_[1, i, j] * (x ** 2\
+                                                   -x * self.means_[0, i, j])\
+                              -self.ss_[0, i, j] * (y ** 2\
+                                                   -y * self.means_[1, i, j])))\
+                            / self.ss_[1, i, j] ** 2)
+
+    def partials(self, X, D, l):
+        """
+        Caculate `d Phi(x_i, X_j) / d w_l` for all samples `i` and `j`. 
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix.
+        D : numpy.ndarray
+            A (sample x sample) matrix for storing derivatives.
+        l : int
+            The `lth` feature in `X`. 
+        
+        Returns
+        -------
+        numpy.ndarray
+            Matrix of partial derivative of `Phi_s(x, y)` for feature `l` over
+            all samples `x` and `y`. 
+        """
+        for i in numba.prange(X.shape[0]):
+            for j in numba.prange(i, X.shape[0]):
+                D[i, j] = self.sample_feature_partial(X, i, j, l)
+                D[j, l] = self.sample_feature_partial(X, j, i, l)
+        return D
+
 
 
 @numba.jitclass(spec)
