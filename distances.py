@@ -12,6 +12,14 @@ def manhattan(x, y, w=_mock_ones):
         result += w[i] * abs(x[i] - y[i])
     return result
 
+@numba.njit()
+def euclidean(x, y, w):
+    """Calculate weighted Euclidean distnace between two vectors."""
+    result = 0.0
+    for i in range(x.shape[0]):
+        result += w[i] * (x[i] - y[i]) ** 2
+    return np.sqrt(result)
+
 
 @numba.njit()
 def sqeuclidean(x, y, w=_mock_ones):
@@ -304,16 +312,18 @@ def fit_phi_s(X, w, means, ss):
     means : numpy.ndarray
         A (2, sample, sample) tensor. Elements `means[0, i, j]` and
         `means[1, i, j]` represent the weighted mean values between
-        `X[i, :] - x[j, :]` and `X[i, :] + X[j, :]`, respectively. 
+        `X[i, :] - x[j, :]` and `X[i, :] + X[j, :]`, respectively. Should be
+        initialized to a zero tensor before fitting.
     ss : [type]
         A (2, sample, sample) tensor. Elements `ss[0, i, j]` and `ss[1, i, j]`
         represent the weighted sum of squared values between
-        `X[i, :] - x[j, :]` and `X[i, :] + X[j, :]`, respectively. 
+        `X[i, :] - x[j, :]` and `X[i, :] + X[j, :]`, respectively. Should be
+        initialized to a zero tensor before fitting.
     
     Returns
     -------
-    [type]
-        [description]
+    float
+        Sum of weights in `w` vector.
     """
     sum_of_weights = 0.0
     for x in w:
@@ -322,49 +332,41 @@ def fit_phi_s(X, w, means, ss):
     for i in numba.prange(X.shape[0]):
         for j in numba.prange(i, X.shape[0]):
             for l in numba.prange(X.shape[1]):
-                if i == j:
-                    # calculate x - x means
-                    means[0, i, i] += 0
-                    means[1, i, i] += 2 * w[l] * X[i, l]
-                else:
-                    # calculate x - y means
-                    means[0, i, j] += w[l] * (X[i, l] - X[j, l])
-                    means[0, j, i] += w[l] * (X[j, l] - X[i, l])
-                    # calculate x + y means
-                    means[1, i, j] += w[l] * (X[i, l] + X[j, l])
-                    means[1, j, i] += w[l] * (X[j, l] + X[i, l])
+                # calculate x - y means
+                means[0, i, j] += w[l] * (X[i, l] - X[j, l])
+                means[0, j, i] += w[l] * (X[j, l] - X[i, l])
+                # calculate x + y means, addition is communicative
+                res = w[l] * (X[i, l] + X[j, l])
+                means[1, i, j] += res
+                means[1, j, i] += res
     
             means[:, i, j] /= sum_of_weights
             means[:, j, i] /= sum_of_weights
     for i in numba.prange(X.shape[0]):
         for j in numba.prange(i, X.shape[0]):
             for l in numba.prange(X.shape[1]):
-                if i == j:
-                    # calculate x - x sum of squares
-                    ss[0, i, i] += -w[l] * means[0, i, l]
-                    ss[1, j, j] += (w[l] * (2 * X[i, l] - means[1, i, l]) ** 2)
-                else:
-                    # calculate x - y sum of squares
-                    ss[0, i, j] += (w[l] * (X[i, l] - X[j, l]) - means[0, i, l])**2
-                    ss[0, j, i] += (w[l] * (X[j, l] - X[i, l]) - means[0, j, l])**2
-                    # calculate x + y sum of squares
-                    ss[1, i, j] += (w[l] * (X[i, l] + X[j, l]) - means[1, i, l])**2
-                    ss[1, j, i] += (w[l] * (X[j, l] + X[i, l]) - means[1, j, l])**2
+                # calculate x - y sum of squares
+                ss[0, i, j] += w[l] * ((X[i, l] - X[j, l]) - means[0, i, l])**2
+                ss[0, j, i] += w[l] * ((X[j, l] - X[i, l]) - means[0, j, l])**2
+                # calculate x + y sum of squares, addition is communicative
+                res = w[l] * ((X[i, l] + X[j, l]) - means[1, i, l])**2
+                ss[1, i, j] += res
+                ss[1, j, i] += res
     return sum_of_weights
 
 # specification of 
-spec = [('v1_', numba.float64),
-        ('means_', numba.float64[:, :, :]),
-        ('ss_', numba.float64[:, :, :]),
-        ('w_', numba.float64[:])]
-@numba.jitclass(spec)
+phi_s_spec = [('v1_', numba.float64),
+              ('means_', numba.float64[:, :, :]),
+              ('ss_', numba.float64[:, :, :]),
+              ('w_', numba.float64[:])]
+@numba.jitclass(phi_s_spec)
 class PhiS(object):
     r"""
-    Calculate partial derivatives for Symmetric Phi.
+    Calculate partial derivatives for Symmetric Phi with squared weights.
     
     .. math::
 
-        \phi_s(X, Y) = \frac{\Var(X - Y)}{\Var(X + Y)}
+        \phi_s(X, Y) = \frac{\Var(X - Y)}{\Var(X + Y)} \\
     """
 
     def __init__(self, X, w):
@@ -382,9 +384,9 @@ class PhiS(object):
         self.means_ = np.zeros((2, X.shape[0], X.shape[0]))
         self.ss_ = np.zeros_like(self.means_)
         self.v1_ = 0.0
-        self.__update_values(X, w)
+        self.update_values(X, w)
 
-    def __update_values(self, X, w):
+    def update_values(self, X, w):
         """
         Update calculated means, sum of squared means, and total feature weight.
         
@@ -398,7 +400,7 @@ class PhiS(object):
         self.w_ = w
         self.means_ *= 0
         self.ss_ *= 0
-        self.v1_ = fit_phi_s(X, self.w_, self.means_, self.ss_)
+        self.v1_ = fit_phi_s(X, self.w_ ** 2, self.means_, self.ss_)
        
 
     def sample_feature_partial(self, X, i, j, l):
@@ -423,16 +425,16 @@ class PhiS(object):
         """
         x = X[i, l] - X[j, l]
         y = X[i, l] + X[j, l]
-        return((2 * self.w_[l] * ((self.w_[l] - self.v1_) / self.v1_ ** 2) \
-                            * (self.ss_[1, i, j] * (x ** 2\
-                                                   -x * self.means_[0, i, j])\
-                              -self.ss_[0, i, j] * (y ** 2\
-                                                   -y * self.means_[1, i, j])))\
-                            / self.ss_[1, i, j] ** 2)
+        dSxx = 2 * self.w_[l] * (x - self.means_[0, i, j])\
+             * (2 * self.w_[l] * ((x - self.means_[0, i, j])**2) / self.v1_ + 1)
+        dSyy = 2 * self.w_[l] * (y - self.means_[1, i, j])\
+             * (2 * self.w_[l] * ((y - self.means_[1, i, j])**2) / self.v1_ + 1)
+        return (self.ss_[1, i, j] * dSxx - self.ss_[0, i, j] * dSyy)\
+                / (self.ss_[1, i, j] ** 2)
 
     def partials(self, X, D, l):
         """
-        Caculate `d Phi(x_i, X_j) / d w_l` for all samples `i` and `j`. 
+        Caculate `d Phi(x_i, x_j) / d w_l` for all samples `i` and `j`. 
         
         Parameters
         ----------
@@ -456,8 +458,7 @@ class PhiS(object):
         return D
 
 
-
-@numba.jitclass(spec)
+@numba.jitclass(phi_s_spec)
 class RhoP(object):
     r"""
     Calculate partial derivatives for Symmetric Phi.
@@ -499,8 +500,8 @@ class RhoP(object):
     def partials(self, weights):
         return self.D_ * -weights
 
-
-@numba.jitclass(spec)
+basic_spec = [('w_', numba.float64[:])]
+@numba.jitclass(basic_spec)
 class Manhattan(WeightedDistance):
     r"""
     Calculate partial derivatives for weighted Manhattan Distance.
@@ -510,7 +511,7 @@ class Manhattan(WeightedDistance):
         L1(X, Y) = \sum \limits_{i = 1}^N w_l^2| x_i - y_i |
     """
 
-    def __init__(self, X, D):
+    def __init__(self, X, w):
         r"""
         Class for quick calculuations of
         :math:`\frac{\partial L1}{\partial w_l}`.
@@ -519,23 +520,152 @@ class Manhattan(WeightedDistance):
         ----------
         X : numpy.ndarray
             A (sample x feature) data matrix.
-        D : numpy.memmap
-            A (sample x sample x feature) distance matrix
+        w : numpy.ndarray
+            A (feature) length feature weight vector.
         """
-        self.D_ = D
-        self.__fit(X)
+        self.w_ = w
 
-    def __fit(self, X):
-        for i in range(X.shape[0]):
-            for j in range(X.shape[0]):
-                self.D_[i, j, :] = 2 * np.abs(X[i, :] - X[j, :])
+    def update_values(self, X, w):
+        """
+        Update calculated means, sum of squared means, and total feature weight.
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix
+        w : numpy.ndarray
+            a (feature) length vector of feature weights. 
+        """
+        self.w_ = w
+       
 
-    def partials(self, weights):
-        return self.D_ * weights
+    def sample_feature_partial(self, X, i, j, l):
+        """
+        Calculate `d L1(x_i, x_j) / d w_l`.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feautre) data matrix.
+        i : int
+            The ith sample in `X`.
+        j : int
+            The jth sample in `X`.
+        l : int
+            The lth feature in `X`.
+        
+        Returns
+        -------
+        float
+            Partial derivative of `Phi_s(x, y)` for feature `l`. 
+        """
+        return 2 * self.w_[l] * abs(X[i, l] - X[j, l])
+
+    def partials(self, X, D, l):
+        r"""
+        Caculate :math:`\frac{\partial L1}{\partial w_l}` for all samples `i`
+        and `j`. 
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix.
+        D : numpy.ndarray
+            A (sample x sample) matrix for storing derivatives.
+        l : int
+            The `lth` feature in `X`. 
+        
+        Returns
+        -------
+        numpy.ndarray
+            Matrix of partial derivative of `Phi_s(x, y)` for feature `l` over
+            all samples `x` and `y`. 
+        """
+        for i in numba.prange(X.shape[0]):
+            for j in numba.prange(i, X.shape[1]):
+                res = self.sample_feature_partial(X, i, j, l)
+                D[i, j] = res
+                D[j, i] = res
 
 
-@numba.jitclass(spec)
+@numba.jitclass(basic_spec)
 class SqEuclidean(object):
+    r"""
+    Calculate partial derivatives for weighted squared euclidean distance.
+    
+    .. math::
+
+        SqEuc(X, Y) = \sum \limits_{i = 1}^N w_l^2 (x_i - y_i)^2 
+    """
+
+    def __init__(self, X, w):
+        r"""
+        Class for quick calculuations of
+        :math:`\frac{\partial SqEuc}{\partial w_l}`.
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix.
+        w : numpy.ndarray
+            A (feature) length vector of feature weights.
+        """
+        self.update_values(X, w)
+
+    def update_values(self, X, w):
+        self.w_ = w
+
+    def sample_feature_partial(self, X, i, j, l):
+        """
+        Calculate `d SqEuc(x_i, x_j) / d w_l`.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feautre) data matrix.
+        i : int
+            The ith sample in `X`.
+        j : int
+            The jth sample in `X`.
+        l : int
+            The lth feature in `X`.
+        
+        Returns
+        -------
+        float
+            Partial derivative of `Phi_s(x, y)` for feature `l`. 
+        """
+        return 2 * self.w_[l] * (X[i, l] - X[j, l]) ** 2
+
+    def partials(self, X, D, l):
+        r"""
+        Caculate :math:`\frac{\partial SqEuc}{\partial w_l}` for all samples `i`
+        and `j`. 
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix.
+        D : numpy.ndarray
+            A (sample x sample) matrix for storing derivatives.
+        l : int
+            The `lth` feature in `X`. 
+        
+        Returns
+        -------
+        numpy.ndarray
+            Matrix of partial derivative of `Phi_s(x, y)` for feature `l` over
+            all samples `x` and `y`. 
+        """
+        for i in numba.prange(X.shape[0]):
+            for j in numba.prange(i, X.shape[1]):
+                res = self.sample_feature_partial(X, i, j, l)
+                D[i, j] = res
+                D[j, i] = res
+
+euclidean_spec = basic_spec + [('dist_', numba.float64[:, :])]
+@numba.jitclass(euclidean_spec)
+class Euclidean(object):
     r"""
     Calculate partial derivatives for weighted squared euclidean distance.
     
@@ -544,7 +674,7 @@ class SqEuclidean(object):
         L2(X, Y) = \sum \limits_{i = 1}^N w_l^2 (x_i - y_i)^2 
     """
 
-    def __init__(self, X, D):
+    def __init__(self, X, w):
         r"""
         Class for quick calculuations of
         :math:`\frac{\partial L2}{\partial w_l}`.
@@ -553,34 +683,80 @@ class SqEuclidean(object):
         ----------
         X : numpy.ndarray
             A (sample x feature) data matrix.
-        D : numpy.memmap
-            A (sample x sample x feature) distance matrix
+        w : numpy.ndarray
+            A (feature) length vector of feature weights.
         """
-        self.D_ = D
-        self.__fit(X)
+        self.dist_ = np.zeros((X.shape[0], X.shape[0]))
+        self.update_values(X, w)
 
-    def __fit(self, X):
-        for i in range(X.shape[0]):
-            for j in range(X.shape[0]):
-                self.D_[i, j, :] = 2 * np.power((X[i, :] - X[j, :]), 2)
+    def update_values(self, X, w):
+        self.dist_ *= 0
+        symmetric_pdist(X, w, self.dist_, euclidean)
+        self.w_ = w
 
-    def partials(self, weights):
-        return self.D_ * weights
+    def sample_feature_partial(self, X, i, j, l):
+        """
+        Calculate `d SqEuc(x_i, x_j) / d w_l`.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feautre) data matrix.
+        i : int
+            The ith sample in `X`.
+        j : int
+            The jth sample in `X`.
+        l : int
+            The lth feature in `X`.
+        
+        Returns
+        -------
+        float
+            Partial derivative of `Phi_s(x, y)` for feature `l`. 
+        """
+        return self.w_[l] * (X[i, l] - X[j, l]) / self.dist_[i, j]
+
+    def partials(self, X, D, l):
+        r"""
+        Caculate :math:`\frac{\partial L2}{\partial w_l}` for all samples `i`
+        and `j`. 
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix.
+        D : numpy.ndarray
+            A (sample x sample) matrix for storing derivatives.
+        l : int
+            The `lth` feature in `X`. 
+        
+        Returns
+        -------
+        numpy.ndarray
+            Matrix of partial derivative of `Phi_s(x, y)` for feature `l` over
+            all samples `x` and `y`. 
+        """
+        for i in numba.prange(X.shape[0]):
+            for j in numba.prange(i, X.shape[1]):
+                res = self.sample_feature_partial(X, i, j, l)
+                D[i, j] = res
+                D[j, i] = res
+
 
 supported_distances = {'l1': manhattan,
                        'cityblock': manhattan,
                        'taxicab': manhattan,
                        'manhattan': manhattan,
-                       'l2': sqeuclidean,
+                       'l2': euclidean,
+                       'euclidean': euclidean,
                        'sqeuclidean': sqeuclidean,
-                       'phi_s': phi_s,
-                       'rho_p': rho_p}
+                       'phi_s': phi_s}
 
 partials = {'l1': Manhattan,
             'cityblock': Manhattan,
             'taxicab': Manhattan,
             'manhattan': Manhattan,
-            'l2': SqEuclidean,
+            'l2': Euclidean,
+            'euclidean': Euclidean,
             'sqeuclidean': SqEuclidean,
-            'phi_s': PhiS,
-            'rho_p': RhoP}
+            'phi_s': PhiS}
