@@ -14,20 +14,20 @@ using namespace std;
  * @param dist A (sample x sample) matrix where d_ij will be the distance
  *     between X_i and X_j
  */
-template <typename Derived>
-void distance_matrix(const DenseBase<Derived>& X, DenseBase<Derived>& dist) {
-    for (int i = 0; i < X.rows(); i++) {
-        const auto &row = X.row(i);
-        #ifdef _OPENMP
-        #pragma omp parallel for shared(row)
-        #endif
-        for (int j = i + 1; j < X.rows(); j++) {
-            // dist(i, j) = (X.row(i)- X.row(j)).template lpNorm<1>();
-            dist(i, j) = (row - X.row(j)).cwiseAbs().sum();
-            dist(j, i) = dist(i, j);
-        }
-    }
-}
+// template <typename Derived>
+// void distance_matrix(const DenseBase<Derived>& X, DenseBase<Derived>& dist) {
+//     for (int i = 0; i < X.rows(); i++) {
+//         const auto &row = X.row(i);
+//         #ifdef _OPENMP
+//         #pragma omp parallel for shared(row)
+//         #endif
+//         for (int j = i + 1; j < X.rows(); j++) {
+//             // dist(i, j) = (X.row(i)- X.row(j)).template lpNorm<1>();
+//             dist(i, j) = (row - X.row(j)).cwiseAbs().sum();
+//             dist(j, i) = dist(i, j);
+//         }
+//     }
+// }
 
 template <typename Derived, typename Derived1>
 void distance_matrix(const DenseBase<Derived>& X,
@@ -38,6 +38,7 @@ void distance_matrix(const DenseBase<Derived>& X,
             dist(j, i) = dist(i, j);
         }
     }
+    dist.triangularVew<Lower> = dist.transpose();
 }
 template <typename Derived, typename Derived1, typename Derived2>
 double fit_weights(const MatrixBase<Derived>& X,
@@ -114,7 +115,7 @@ int main() {
     VectorXd v = VectorXd::Ones(100);
     time_t start, end;
     time(&start);
-    distance_matrix(m * v, d);
+    distance_matrix((m * v).eval(), d);
     time(&end);
     // Calculating total time taken by the program. 
     double time_taken = double(end - start); 
