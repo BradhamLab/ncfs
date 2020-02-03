@@ -1,0 +1,331 @@
+\documentclass[12pt, a4paper]{article}
+\usepackage{amsmath}
+\usepackage[left=1in, right=1in, top=1in, bottom=1in]{geometry}
+\usepackage{upgreek}
+\usepackage{mathtools}
+\setlength{\parindent}{0pt}
+
+\bibliography{proofs/ncfs_optimization} 
+\bibliographystyle{ieeetr}
+
+\title{Partial Derivatives for NCFS Optimization}
+\author{Dakota Y. Hawkins}
+
+\begin{document}
+\maketitle
+
+
+\begin{section}{Identities}
+
+    From \cite{Yang2012}, the probability a sample $j$ is used as a reference
+    point for sample $i$ in a leave-on-out KNN prediction is:
+
+    \begin{equation}\label{pij}
+        p_{ij} =
+            \begin{cases*}
+            \dfrac{K(D_w(x_i, x_j))}
+                       {\sum \limits_{k = 1}^N K(D_w(x_i, x_k))}, &i \neq j \\
+            0, &i = j \\
+            \end{cases*}
+    \end{equation}
+
+    Where $X$ is a $(N \times P)$ data matrix, where $N$ is the number of samples and
+    $P$ is the number of features. $x_i$ is the row feature vector for sample
+    $i$ where $x_i = \left < x_{i1}, x_{i2}, \ldots, x_{ip} \right >$,
+    $i \in \left \{1, \ldots, N \right \}$. Let $D_w(x_i, x_j)$ be some weighted distance
+    function to measure differences between sample vectors, such that $w_l$ is
+    the weight prescribed to the $lth$ feature, $l \in \{1, \ldots, P\}$
+    $w = \left < w_1, \ldots, w_P \right >$. In this document it is assumed
+    that \textbf{all weights are squared} to ensure non-negative properties.
+    Examples are listed in the next section
+
+    Finally, let $K(D_w(x_i, w_j))$ be the kernel function from \cite{Yang2012}
+    where
+
+    \begin{equation}
+        K(D) = \exp{ \left ( - \dfrac{D}{\sigma} \right )}
+    \end{equation}
+
+    for some real number $\sigma$. \\
+    
+    In order to account for class balance, we modify the objective function in
+    \cite{Yang2012} from
+    \begin{equation}
+    \xi (w) = \sum \limits_{i=1}^N \sum \limits_{j=1}^N y_{ij} \cdot p_{ij}
+              - \lambda \sum \limits_{l=1}^D w_l^2
+    \end{equation}
+    to
+    \begin{equation}
+    \zeta (w) = \sum \limits_{i = 1}^N \dfrac{1}{C_i}
+                \sum \limits_{j = 1}^N y_{ij} p_{ij}
+                - \lambda \sum \limits_{l=1}^D w_l^2
+    \end{equation}
+
+    where, given $c = \left <c_1, \cdots, c_N \right >$, is a vector of class
+    assignments for each sample $i$ in $X$.
+
+    \begin{equation}
+        y_{ij} =
+               \begin{cases*}
+                   1, & c_i = c_j \\
+                   0, & c_i \neq c_j
+               \end{cases*}
+    \end{equation}
+
+    and $C_i$ is the total number of samples with label $C_i$.
+
+    \begin{equation}
+        C_i = \sum \limits_{j = 1}^N y_{ij}
+    \end{equation}
+
+    Finally, let $p_i$ be the probability that sample $i$ is is correctly
+    assigned it's given class during KNN selection:
+
+    \begin{equation}
+        p_i = \sum \limits_{j=1}^N y_{ij} p_{ij}
+    \end{equation}
+
+\end{section}
+
+\begin{section}{Distances}
+
+    Below is a list of supported distances.
+
+    \begin{enumerate}
+        \item Manhattan, City Block, L1
+            \begin{equation}
+                D_w(x_i, x_j) = \sum \limits_{l = 1}^P
+                                 w_l^2 \left | x_{il} - x_{jl} \right |
+            \end{equation}
+
+        \item Euclidean, L2
+            \begin{equation}
+                D_w(x_i, x_j) = \sqrt{\sum \limits_{l = 1}^P
+                                     w_l^2 \left ( x_{il} - x_{jl} \right ) ^ 2}
+            \end{equation}
+        \item Squared Euclidean
+            \begin{equation}
+                D_w(x_i, x_j) = \sum \limits_{l = 1}^P
+                                w_l^2 \left ( x_{il} - x_{jl} \right ) ^ 2
+            \end{equation}
+        \item $\Phi_s$
+             \begin{equation}
+                D_w(x_i, x_j) = \sum \limits_{l = 1}^P
+                                \dfrac{Var_w(x_i - x_j)}{Var_w(x_i + x_j)}
+             \end{equation}
+             Where 
+             \begin{align*}
+                Var_w(x_i) &= \dfrac{\sum \limits_{l = 1}^P
+                                       \left w^2(x_{il} - \mu_{x_i}^w \right)^2}
+                                    {V_1 - \dfrac{V_2}{V_1}} \\
+                V_1 &= \sum \limits_{l = 1}^P w_{l} ^ 2\\
+                V_2 &= \sum \limits_{l = 1}^P w_{l} ^ 4 \\
+                \mu_{x_i}^w &= \dfrac{\sum \limits_{l = 1}^P x_{il}\cdot  w_l^2}
+                               {V_1}
+             \end{align*}
+    \end{enumerate}
+
+\end{section}
+
+\begin{section}{Partial Derivative of Objective Function}
+
+    In this section we find the partial derivative of $\zeta(w)$ with respect
+    to $w_l$ for an arbitrary distance function.
+
+    \begin{align*}
+        \zeta(w) &=
+            \zeta (w) = \sum \limits_{i = 1}^N \dfrac{1}{C_i}
+            \sum \limits_{j = 1}^N y_{ij} p_{ij}
+            - \lambda \sum \limits_{l=1}^D w_l^2 \\
+        \dfrac{\partial \zeta(w)}{\partial w_l} &=
+            \dfrac{\partial}{\partial w_l} \left (
+                \sum \limits_{i = 1}^N \dfrac{1}{C_i}
+                \sum \limits_{j = 1}^N y_{ij} p_{ij}
+                - \lambda \sum \limits_{l=1}^D w_l^2 \right )\\
+        &= 
+            \dfrac{\partial}{\partial w_l}
+                \sum \limits_{i = 1}^N \dfrac{1}{C_i}
+                \sum \limits_{j = 1}^N y_{ij} p_{ij}
+            - \dfrac{\partial}{\partial w_l} 
+                \lambda \sum \limits_{l=1}^D w_l^2 \\
+        &=
+            \sum \limits_{i = 1}^N \dfrac{1}{C_i}
+            \sum \limits_{j = 1}^N y_{ij} \dfrac{\partial p_{ij}}{\partial w_l}
+            - \lambda \sum \limits_{l=1}^D \dfrac{\partial w_l^2}{\partial w_l} \\
+        \dfrac{\partial \zeta(w)}{\partial w_l} &=
+            \sum \limits_{i = 1}^N \dfrac{1}{C_i}
+            \sum \limits_{j = 1}^N y_{ij} \dfrac{\partial p_{ij}}{\partial w_l}
+            - 2 w_l \lambda
+    \end{align*}
+
+    From $\eqref{pij}$, $p_{ij} = 0$ when $i = j$. It follows
+    $\dfrac{\partial \zeta(w)}{\partial w_l} = 0$ when $i = j$. Before solving
+    for $\dfrac{\partial \zeta(w)}{\partial w_l}$ when $i \neq j$, we first
+    solve for the partial derivatives of $K\left (D_w(x_i, x_j) \right )$ for an
+    arbitrary weighted distance function.
+
+    \begin{align*}
+        K\left (D_w(x_i, x_j) \right ) &= e^{\dfrac{-D_w(x_i, x_j)}{\sigma}} \\
+        \dfrac{\partial K\left (D_w(x_i, x_j) \right )}{\partial w_l}
+        &=
+            \dfrac{\partial}{\partial w_l} e^{\dfrac{-D_w(x_i, x_j)}{\sigma}} \\
+        &=  \dfrac{-1}{\sigma} \dfrac{\partial D_w(x_i, x_j)}{\partial w_l}
+              e^{\dfrac{-D_w(x_i, x_j)}{\sigma}} \\
+        \dfrac{\partial K\left (D_w(x_i, x_j) \right )}{\partial w_l}
+        &=
+            \dfrac{-1}{\sigma} \dfrac{\partial D_w(x_i, x_j)}{\partial w_l}
+            K(D_w(x_i, x_j))
+    \end{align*}
+
+    Extending above it is easy to see that:
+
+    \begin{align*}
+        \dfrac{\partial}{\partial w_l}
+        \sum \limits_{k = 1}^N K(D_w(x_i, x_k))
+        &= \sum \limits_{k=1}^N
+           \dfrac{-1}{\sigma} \dfrac{\partial D_w(x_i, x_k)}{\partial w_l}
+           K(D_w(x_i, x_k))
+    \end{align*}
+
+    Further, letting $f_1 = K\left (D_w(x_i, x_j) \right )$ and
+    $f_2 = \sum \limits_{k = 1}^N K(D_w(x_i, x_k))$:
+
+    \begin{align*}
+        \dfrac{K(D_w(x_i, x_j))}
+                        {\sum \limits_{k = 1}^N K(D_w(x_i, x_k))}
+        &=
+            \dfrac{f_1}{f_2} \\
+        &=
+            f_1(f_2)^{-1} \\
+        \dfrac{\partial}{\partial w_l}
+        \dfrac{K(D_w(x_i, x_j))}
+                        {\sum \limits_{k = 1}^N K(D_w(x_i, x_k))}
+        &=
+            \dfrac{\partial}{\partial w_l} \left ( f_1(f_2)^{-1} \right ) \\
+        &= f_1 \dfrac{\partial f_2^{-1}}{\partial w_l} + 
+           \dfrac{\partial f_1}{\partial w_l} f_2^-1 \\
+    \end{align*}
+
+    Solving for  in for $f_1 \frac{\partial}{\partial w_l} f_2^{-1}$
+
+    \begin{align*}
+        f_1 \frac{\partial}{\partial w_l} f_2^{-1}
+            &= - K(D_w(x_i, x_j)) \cdot
+               \dfrac{\sum \limits_{k=1}^N \frac{\partial}{\partial w_l} K(D_w(x_i, x_k))}
+                     {(\sum \limits_{k=1}^N K(D_w(x_i, x_k))^2}\\
+    \end{align*}
+
+    Substituting in equation $\ref{pij}$:
+
+    \begin{align*}
+        f1 \dfrac{\partial f_2^{-1}}{\partial w_l}
+        &= - p_{ij} \dfrac{\sum \limits_{k=1}^N \frac{\partial}{\partial w_l} K(D_w(x_i, x_k))}
+                        {\sum \limits_{k=1}^N K(D_w(x_i, x_j))}
+    \end{align*}
+
+    Similarly solving for $\frac{\partial f_1}{\partial w_l} f_2^{-1}$:
+
+    \begin{align*}
+        \frac{\partial f_1}{\partial w_l} f_2^{-1}
+            &= \dfrac{\frac{\partial}{\partial w_l} K(D_w(x_i, x_j))}
+                     {\sum \limits_{k=1}^N K(D_w(x_i, x_j))}
+    \end{align*}
+    
+    
+    Now solving for $\frac{\partial}{\partial w_l} p_{ij}$ when $i \neq j$:
+
+    \begin{align*}
+        p_{ij} &= \dfrac{K(D_w(x_i, x_j))}
+                        {\sum \limits_{k = 1}^N K(D_w(x_i, x_k))} \\
+        \dfrac{\partial p_{ij}}{\partial w_l}
+        &=  \dfrac{\partial}{\partial w_l} \left (
+            \dfrac{K(D_w(x_i, x_j))}
+                  {\sum \limits_{k = 1}^N K(D_w(x_i, x_k))} \right ) \\
+        &=
+            \dfrac{\partial}{\partial w_l} (f_1 f_2^{-1}) \\ 
+        &= 
+            f_1 \dfrac{\partial f_2^{-1}}{\partial w_l} + 
+            \dfrac{\partial f_1}{\partial w_l} f_2^-1 \\
+        &=
+            - p_{ij} \dfrac{\sum \limits_{k=1}^N \frac{\partial}{\partial w_l} K(D_w(x_i, x_k))}
+            {\sum \limits_{k=1}^N K(D_w(x_i, x_j))}
+            + \dfrac{\frac{\partial}{\partial w_l} K(D_w(x_i, x_j))}
+              {\sum \limits_{k=1}^N K(D_w(x_i, x_j))} \\
+        &=
+            p_{ij} \dfrac{\sum \limits_{k=1}^N \frac{\partial D_w(x_i, x_j)}{\partial w_l} K(D_w(x_i, x_k))}
+            {\sigma \sum \limits_{k=1}^N K(D_w(x_i, x_k))}
+            - 
+            \dfrac{\frac{\partial D_w(x_i, x_j)}{\partial w_l}K(D_w(x_i, x_j))}
+            {\sigma \sum \limits_{k=1}^N K(D_w(x_i, x_k)} \\
+        &=
+            p_{ij} \dfrac{\sum \limits_{k=1}^N \frac{\partial D_w(x_i, x_j)}{\partial w_l} K(D_w(x_i, x_k))}
+            {\sigma \sum \limits_{k=1}^N K(D_w(x_i, x_k))}
+            - 
+            \frac{\partial D_w(x_i, x_j)}{\partial w_l} \frac{p_{ij}}{\sigma} \\
+        &= \frac{p_{ij}}{\sigma}
+           \left ( 
+                \dfrac{\sum \limits_{k=1}^N \frac{\partial D_w(x_i, x_j)}{\partial w_l} K(D_w(x_i, x_k))}
+                {\sum \limits_{k=1}^N K(D_w(x_i, x_k))}
+                - 
+                \frac{\partial D_w(x_i, x_j)}{\partial w_l} \right ) \\
+        &= \frac{p_{ij}}{\sigma}
+            \left ( 
+                \sum \limits_{k=1}^N \frac{\partial D_w(x_i, x_j)}{\partial w_l}
+                    \frac{K(D_w(x_i, x_k))}{\sum \limits_{k=1}^N K(D_w(x_i, x_k))}
+                - 
+                \frac{\partial D_w(x_i, x_j)}{\partial w_l} \right) \\
+        \dfrac{\partial p_{ij}}{\partial w_l}
+        &= \frac{p_{ij}}{\sigma}
+            \left ( 
+                \sum \limits_{k=1}^N \frac{\partial D_w(x_i, x_j)}{\partial w_l} p_{ik}
+                - 
+                \frac{\partial D_w(x_i, x_j)}{\partial w_l} \right) \\
+    \end{align*}
+
+    Continuing to solve for $\dfrac{\partial \zeta (w)}{\partial w_l}$:
+
+    \begin{align*}
+        \dfrac{\partial \zeta (w)}{\partial w_l}
+        &= 
+            \sum \limits_{i = 1}^N \dfrac{1}{C_i}
+            \sum \limits_{j = 1}^N y_{ij} \dfrac{\partial p_{ij}}{\partial w_l}
+            - 2 w_l \lambda \\
+        &=
+            \sum \limits_{i=1}^N \dfrac{1}{C_i}
+            \sum \limits_{j=1}^N y_{ij}
+            \left [
+                \frac{p_{ij}}{\sigma} \left ( 
+                \sum \limits_{k=1}^N \frac{\partial D_w(x_i, x_j)}{\partial w_l} p_{ik}
+                - 
+                \frac{\partial D_w(x_i, x_j)}{\partial w_l} \right)
+            \right ]
+            - 2 w_l \lambda \\
+        &=
+            \frac{1}{\sigma}
+            \sum \limits_{i=1}^N \dfrac{1}{C_i}
+            \left [
+            \sum \limits_{j=1}^N y_{ij} p_{ij}
+                \sum \limits_{k=1}^N \frac{\partial D_w(x_i, x_j)}{\partial w_l} p_{ik}
+                - 
+                \sum \limits_{j=1}^N y_{ij} p_{ij}
+                \frac{\partial D_w(x_i, x_j)}{\partial w_l}
+            \right ]
+            - 2 w_l \lambda \\
+        \dfrac{\partial \zeta (w)}{\partial w_l}
+        &=
+            \frac{1}{\sigma}
+            \sum \limits_{i=1}^N \dfrac{1}{C_i}
+            \left [
+                p_i
+                \sum \limits_{k=1}^N \frac{\partial D_w(x_i, x_j)}{\partial w_l} p_{ik}
+                - 
+                \sum \limits_{j=1}^N y_{ij} p_{ij}
+                \frac{\partial D_w(x_i, x_j)}{\partial w_l}
+            \right ]
+            - 2 w_l \lambda \\
+    \end{align*}
+
+
+\end{section}
+
+\end{document}
