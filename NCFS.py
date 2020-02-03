@@ -94,7 +94,7 @@ def feature_gradients(p_reference, p_correct, partials, weights,
 class ExponentialKernel(object):
     """Base class for kernel functions."""
 
-    def __init__(self, sigma, reg, n_features):
+    def __init__(self, sigma, reg, n_features, metric):
         """
         Base class for kernel functions.
 
@@ -106,6 +106,8 @@ class ExponentialKernel(object):
             Regularization parameter.
         n_features : float
             Number of features.
+        metric: str
+            Distance metric to use between vectors.
 
         Methods
         -------
@@ -117,13 +119,34 @@ class ExponentialKernel(object):
         """
         self.sigma = sigma
         self.reg = reg
-        self.gradients_ = np.zeros(n_features, np.float64)
+        self.metric = metric
 
     def transform(self, distance_matrix):
         """Apply a kernel transformation to a distance matrix."""
         return np.exp(-1 * distance_matrix / self.sigma)
 
-    def gradients(self, p_reference, partials, weights, class_matrix):
+    def probability_matrix(self, X):
+        # calculate D_w(x_i, x_j): sum(w_l^2 * |x_il - x_jl], l) for all i,j
+        dmat = np.zeros((X.shape[0], X.shape[0]), dtype=np.float64)
+        distances.pdist(X, self.metric.w_ ** 2, dmat, self.metric.distance,
+                        self.metric.symmetric)
+        # calculate K(D_w(x_i, x_j)) for all i, j pairs
+        p_reference = self.transform(dmat)
+        # set p_ii = 0, can't select self as reference sample
+        np.fill_diagonal(p_reference, 0.0)
+        # add pseudocount if necessary to avoid dividing by zero
+        row_sums = p_reference.sum(axis=1)
+        n_zeros = sum(row_sums == 0)
+        if n_zeros > 0:
+            print('Adding pseudocounts to distance matrix to avoid ' +
+                  'dividing by zero.')
+            pseudocount = np.exp(-20)
+            row_sums += pseudocount
+        scale_factors = 1 / (row_sums)
+        p_reference = (p_reference.T * scale_factors).T
+        return p_reference
+
+    def gradients(self, X, class_matrix, sample_weights):
         r"""
         Calculate feature gradients of objective function.
 
@@ -134,7 +157,7 @@ class ExponentialKernel(object):
         **Objective Function**:
 
         .. math::
-            E(\vec w) = \sum \limits_i^N \sum \limits_i^N y_{ij} * p_{ij}
+            E(\vec w) = \sum \limits_i^N \frac{1}{C_i} \sum \limits_i^N y_{ij} * p_{ij}
                       - \lambda \sum \limits_l^M w_l^2
         
         Parameters
@@ -166,11 +189,25 @@ class ExponentialKernel(object):
             Gradient vector for each feature with respect to the objective
             function.
         """
+        # calculate probability of correct classification
+        self.p_reference = self.probability_matrix(X)
         p_correct = np.sum(p_reference * class_matrix, axis=1)
-        self.gradients_ = feature_gradients(p_reference, p_correct, partials,
-                                            weights, class_matrix, self.reg,
-                                            self.sigma, self.gradients_)
-        return self.gradients_
+        # caclulate weight adjustments for each feature
+        def f(l):
+            # calculate partial matrix 
+            d_mat = np.zeros_like(p_reference)
+            self.metric.partials(X, d_mat, l)
+            # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
+            d_mat *= p_reference
+            # calculate p_i * sum(D_ij), j from 0 to N
+            all_term = p_correct * d_mat.sum(axis=1)
+            # weighted in-class distances using adjacency matrix,
+            in_class_term = np.sum(d_mat * class_matrix, axis=1)
+            sample_terms = sample_weights * (all_term - in_class_term)
+            # calculate delta following gradient ascent 
+            return 1 / self.sigma * sample_terms.sum() - 2 * self.metric.w_[l] * self.reg
+        partials = np.vectorize(f)(range(self.metric.w_.size))
+        return partials
 
 
 class NCFS(base.BaseEstimator, base.TransformerMixin):
@@ -264,6 +301,56 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             print('Best to have values in X between 0 and 1.')
         return X.astype(np.float64)
 
+    def __check_params(self, X, y):
+        """
+        Check params for NCFS fitting
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix.
+        y : numpy.ndarray
+            A sample length vector of class labels.
+        """
+        if not 0 < self.alpha < 1:
+            raise ValueError("Alpha value should be between 0 and 1.")
+        if not isinstance(X, np.ndarray):
+            raise ValueError('`X` must be two-dimensional numpy array. Got ' + 
+                             '{}.'.format(type(X)))
+        if len(X.shape) != 2:
+            raise ValueError('`X` must be two-dimensional numpy array. Got ' + 
+                             '{} dimensional.'.format(len(X.shape)))
+        if not isinstance(y, np.ndarray):
+            raise ValueError('`y` must be a numpy array. ' + 
+                             'Got {}.'.format(type(y)))
+        if y.shape[0] != X.shape[0]:
+            raise ValueError('`X` and `y` must have the same row numbers.')
+        n_samples, n_features = X.shape
+        # initialize all weights as 1
+        self.coef_ = np.ones(n_features, dtype=np.float64)
+        # check distance metric
+        if self.metric.lower() not in distances.supported_distances:
+            raise ValueError("Unsupported distance metric {}".\
+                             format(self.metric))
+        # initialize distance metric
+        self.metric_ = distances.partials[self.metric](X, self.coef_)
+        # intialize kernel function
+        if self.kernel == 'exponential':
+            X = NCFS.__check_X(X)
+            self.kernel_ = ExponentialKernel(self.sigma, self.reg, n_features,
+                                             self.metric_)
+        else:
+            raise ValueError('Unsupported kernel function: {}'\
+                             .format(self.kernel))
+        # initialize gradient ascent solver
+        if self.solver == 'ncfs':
+            self.solver_ = NCFSOptimizer(alpha=self.alpha)
+        else:
+            raise ValueError('Unsupported gradient ascent method{}'.\
+                             format(self.solver))
+        return (n_samples, n_features)
+
+
     def fit(self, X, y):
         """
         Fit feature weights using Neighborhood Component Feature Selection.
@@ -286,51 +373,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             Fitted NCFS object with weights stored in the `.coef_` instance
             variable.
         """
-        if not 0 < self.alpha < 1:
-            raise ValueError("Alpha value should be between 0 and 1.")
-        if not isinstance(X, np.ndarray):
-            raise ValueError('`X` must be two-dimensional numpy array. Got ' + 
-                             '{}.'.format(type(X)))
-        if len(X.shape) != 2:
-            raise ValueError('`X` must be two-dimensional numpy array. Got ' + 
-                             '{} dimensional.'.format(len(X.shape)))
-        if not isinstance(y, np.ndarray):
-            raise ValueError('`y` must be a numpy array. ' + 
-                             'Got {}.'.format(type(y)))
-        if y.shape[0] != X.shape[0]:
-            raise ValueError('`X` and `y` must have the same row numbers.')
-        n_samples, n_features = X.shape
-        # intialize kernel function
-        if self.kernel == 'exponential':
-            X = NCFS.__check_X(X)
-            self.kernel_ = ExponentialKernel(self.sigma, self.reg, n_features)
-        else:
-            raise ValueError('Unsupported kernel function: {}'\
-                             .format(self.kernel))
-        # initialize gradient ascent solver
-        if self.solver == 'ncfs':
-            self.solver_ = NCFSOptimizer(alpha=self.alpha)
-        else:
-            raise ValueError('Unsupported gradient ascent method{}'.\
-                             format(self.solver))
-        # initialize distance metric
-        if self.metric.lower() not in distances.supported_distances:
-            raise ValueError("Unsupported distance metric {}".\
-                             format(self.metric))
-        else:
-            self.metric_ = distances.supported_distances[self.metric]
-            # initialize WeightedDistance object for partial calculations.
-            weighted_dist = distances.partials[self.metric]
-            # create distance memmap file
-            memfile = os.path.join(mkdtemp(), 'distance.dat')
-            self.distance_ = weighted_dist(X, np.memmap(memfile,
-                                                        dtype='float64',
-                                                        mode='w+',
-                                                        shape=(X.shape[0],
-                                                               X.shape[0],
-                                                               X.shape[1])))
-        # initialize all weights as 1
-        self.coef_ = np.ones(n_features, dtype=np.float64)
+        n_samples, n_features = self.__check_params(X, y)
         # construct adjacency matrix of class membership for matrix mult. 
         class_matrix = np.zeros((n_samples, n_samples), np.float64)
         for i in range(n_samples):
@@ -339,16 +382,12 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                     class_matrix[i, j] = 1
 
         objective, loss = 0, np.inf
+        sample_weights = np.ones_like(self.coef_)
         while abs(loss) > self.eta:
-            new_objective = self.__fit(X, class_matrix, objective)
+            new_objective = self.__fit(X, class_matrix, sample_weights, objective)
             loss = objective - new_objective
             objective = new_objective
         self.score_ = objective
-        # delete stored temporary file
-        fn = self.distance_.D_.filename
-        print(fn)
-        os.remove(fn)
-        os.removedirs(os.path.split(fn)[0])
         return self
 
     def transform(self, X):
@@ -387,7 +426,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             X = NCFS.__check_X(X)
         return X * self.coef_ ** 2
 
-    def __fit(self, X, class_matrix, objective):
+    def __fit(self, X, class_matrix, sample_weights, objective):
         """
         Underlying method to fit NCFS model.
         
@@ -405,39 +444,26 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         float
             Objective reached by current iteration.
         """
-        # organize as distance matrix by summing along feature index
-        # calculate D_w(x_i, x_j): sum(w_l^2 * |x_il - x_jl], l) for all i,j
-        dmat = np.zeros((X.shape[0], X.shape[0]), dtype=np.float64)
-        distances.symmetric_pdist(X, self.coef_, dmat, self.metric_)
-        # calculate K(D_w(x_i, x_j)) for all i, j pairs
-        p_reference = self.kernel_.transform(dmat)
-        # set p_ii = 0, can't select self as reference sample
-        np.fill_diagonal(p_reference, 0.0)
-        # add pseudocount if necessary to avoid dividing by zero
-        row_sums = p_reference.sum(axis=1)
-        n_zeros = sum(row_sums == 0)
-        if n_zeros > 0:
-            print('Adding pseudocounts to distance matrix to avoid ' +
-                    'dividing by zero.')
-            pseudocount = np.exp(-20)
-            row_sums += pseudocount
-        scale_factors = 1 / (row_sums)
-        p_reference = (p_reference.T * scale_factors).T
-        # calculate partial derivates for each sample x sample x feature trip
-        partials = self.distance_.partials(self.coef_)
         # caclulate weight adjustments
-        gradients = self.kernel_.gradients(p_reference, partials, self.coef_,
-                                           class_matrix)
+        gradients = self.kernel_.gradients(X, class_matrix,
+                                                          sample_weights)        
         # calculate objective function
-        new_objective = (np.sum(p_reference * class_matrix) \
-                      - self.reg * np.dot(self.coef_, self.coef_))
+        new_objective = self.objective(self.kernel_.p_reference,
+                                       class_matrix,
+                                       sample_weights)
         # calculate loss from previous objective function
         loss = new_objective - objective
         # update weights
         deltas = self.solver_.get_steps(gradients, loss)
         self.coef_ = self.coef_ + deltas
         # return objective score for new iteration
+        self.metric_.update_values(X, self.coef_)
         return new_objective
+
+    def objective(self, p_reference, class_matrix, sample_weights):
+        score = np.sum((p_reference * class_matrix).T * sample_weights) \
+                      - self.reg * np.dot(self.coef_, self.coef_)
+        return score
 
 
 def toy_dataset(n_features=1000):

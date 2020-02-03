@@ -66,7 +66,7 @@ def variance(x, w=_mock_ones):
         result += w[i] * (x[i] - mean) ** 2
     return result / (sum_of_weights - sum_of_squared_weights / sum_of_weights)
 
-
+# should we 1 - this?
 @numba.njit()
 def phi_s(x, y, w=_mock_ones):
     """Calculate the phi_s proportionality metric between two vectors."""
@@ -93,7 +93,7 @@ supported_distances = {'l1': manhattan,
                        'rho_p': rho_p}
 
 @numba.njit(parallel=True)
-def symmetric_pdist(X, w, dist, func, symmetric = True):
+def pdist(X, w, dist, func, symmetric = True):
     """
     Find the pairwise distances between all rows in a data matrix.
 
@@ -358,7 +358,8 @@ def fit_phi_s(X, w, means, ss):
 phi_s_spec = [('v1_', numba.float64),
               ('means_', numba.float64[:, :, :]),
               ('ss_', numba.float64[:, :, :]),
-              ('w_', numba.float64[:])]
+              ('w_', numba.float64[:]),
+              ('symmetric', numba.boolean)]
 @numba.jitclass(phi_s_spec)
 class PhiS(object):
     r"""
@@ -385,7 +386,11 @@ class PhiS(object):
         self.ss_ = np.zeros_like(self.means_)
         self.v1_ = 0.0
         self.update_values(X, w)
-
+        self.symmetric = False
+    
+    def distance(self, x, y, w):
+        return phi_s(x, y, w)
+    
     def update_values(self, X, w):
         """
         Update calculated means, sum of squared means, and total feature weight.
@@ -400,8 +405,7 @@ class PhiS(object):
         self.w_ = w
         self.means_ *= 0
         self.ss_ *= 0
-        self.v1_ = fit_phi_s(X, self.w_ ** 2, self.means_, self.ss_)
-       
+        self.v1_ = fit_phi_s(X, self.w_ ** 2, self.means_, self.ss_)       
 
     def sample_feature_partial(self, X, i, j, l):
         """
@@ -500,7 +504,8 @@ class RhoP(object):
     def partials(self, weights):
         return self.D_ * -weights
 
-basic_spec = [('w_', numba.float64[:])]
+basic_spec = [('w_', numba.float64[:]),
+              ('symmetric', numba.boolean)]
 @numba.jitclass(basic_spec)
 class Manhattan(WeightedDistance):
     r"""
@@ -524,6 +529,7 @@ class Manhattan(WeightedDistance):
             A (feature) length feature weight vector.
         """
         self.w_ = w
+        self.symmetric = True
 
     def update_values(self, X, w):
         """
@@ -537,6 +543,9 @@ class Manhattan(WeightedDistance):
             a (feature) length vector of feature weights. 
         """
         self.w_ = w
+
+    def distance(self, x, y, w):
+        return manhattan(x, y, w)
        
 
     def sample_feature_partial(self, X, i, j, l):
@@ -611,9 +620,13 @@ class SqEuclidean(object):
             A (feature) length vector of feature weights.
         """
         self.update_values(X, w)
+        self.symmetric = True
 
     def update_values(self, X, w):
         self.w_ = w
+
+    def distance(self, x, y, w):
+        return sqeuclidean(x, y, w)
 
     def sample_feature_partial(self, X, i, j, l):
         """
@@ -687,12 +700,16 @@ class Euclidean(object):
             A (feature) length vector of feature weights.
         """
         self.dist_ = np.zeros((X.shape[0], X.shape[0]))
+        self.symmetric = True
         self.update_values(X, w)
 
     def update_values(self, X, w):
         self.dist_ *= 0
-        symmetric_pdist(X, w, self.dist_, euclidean)
+        pdist(X, w, self.dist_, euclidean)
         self.w_ = w
+
+    def distance(self, x, y, w):
+        return euclidean(x, y, w)
 
     def sample_feature_partial(self, X, i, j, l):
         """
@@ -741,6 +758,20 @@ class Euclidean(object):
                 res = self.sample_feature_partial(X, i, j, l)
                 D[i, j] = res
                 D[j, i] = res
+
+def is_symmetric(metric):
+    symmetric = {'l1': True,
+             'cityblock': True,
+             'taxicab': True,
+             'manhattan': True,
+             'l2': True,
+             'euclidean': True,
+             'sqeuclidean': True,
+             'phi_s': False}
+    try:
+        return symmetric[metric]
+    except KeyError:
+        raise ValueError("Unsupported metric {}".format(metric))
 
 
 supported_distances = {'l1': manhattan,
