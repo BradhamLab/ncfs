@@ -544,7 +544,7 @@ class Manhattan(WeightedDistance):
         """
         self.w_ = w
 
-    def distance(self, x, y, w):
+    def distance(self, x, y, w=_mock_ones):
         return manhattan(x, y, w)
        
 
@@ -591,7 +591,7 @@ class Manhattan(WeightedDistance):
             all samples `x` and `y`. 
         """
         for i in numba.prange(X.shape[0]):
-            for j in numba.prange(i, X.shape[1]):
+            for j in numba.prange(i, X.shape[0]):
                 res = self.sample_feature_partial(X, i, j, l)
                 D[i, j] = res
                 D[j, i] = res
@@ -625,7 +625,7 @@ class SqEuclidean(object):
     def update_values(self, X, w):
         self.w_ = w
 
-    def distance(self, x, y, w):
+    def distance(self, x, y, w=_mock_ones):
         return sqeuclidean(x, y, w)
 
     def sample_feature_partial(self, X, i, j, l):
@@ -671,7 +671,7 @@ class SqEuclidean(object):
             all samples `x` and `y`. 
         """
         for i in numba.prange(X.shape[0]):
-            for j in numba.prange(i, X.shape[1]):
+            for j in numba.prange(i, X.shape[0]):
                 res = self.sample_feature_partial(X, i, j, l)
                 D[i, j] = res
                 D[j, i] = res
@@ -708,7 +708,7 @@ class Euclidean(object):
         pdist(X, w, self.dist_, euclidean)
         self.w_ = w
 
-    def distance(self, x, y, w):
+    def distance(self, x, y, w=_mock_ones):
         return euclidean(x, y, w)
 
     def sample_feature_partial(self, X, i, j, l):
@@ -731,6 +731,8 @@ class Euclidean(object):
         float
             Partial derivative of `Phi_s(x, y)` for feature `l`. 
         """
+        if i == j:
+            return 0
         return self.w_[l] * (X[i, l] - X[j, l]) / self.dist_[i, j]
 
     def partials(self, X, D, l):
@@ -754,7 +756,7 @@ class Euclidean(object):
             all samples `x` and `y`. 
         """
         for i in numba.prange(X.shape[0]):
-            for j in numba.prange(i, X.shape[1]):
+            for j in numba.prange(i, X.shape[0]):
                 res = self.sample_feature_partial(X, i, j, l)
                 D[i, j] = res
                 D[j, i] = res

@@ -120,6 +120,19 @@ class ExponentialKernel(object):
         self.sigma = sigma
         self.reg = reg
         self.metric = metric
+        self._set_distance()
+
+    def _set_distance(self):
+        if isinstance(self.metric, distances.PhiS):
+            self.distance_ = distances.phi_s
+        elif isinstance(self.metric, distances.Manhattan):
+            self.distance_ = distances.manhattan
+        elif isinstance(self.metric, distances.Euclidean):
+            self.distance_ = distances.euclidean
+        elif isinstance(self.metric, distances.SqEuclidean):
+            self.distance_ = distances.sqeuclidean
+        else:
+            raise ValueError("Unsupported metric function.")
 
     def transform(self, distance_matrix):
         """Apply a kernel transformation to a distance matrix."""
@@ -128,8 +141,9 @@ class ExponentialKernel(object):
     def probability_matrix(self, X):
         # calculate D_w(x_i, x_j): sum(w_l^2 * |x_il - x_jl], l) for all i,j
         dmat = np.zeros((X.shape[0], X.shape[0]), dtype=np.float64)
-        distances.pdist(X, self.metric.w_ ** 2, dmat, self.metric.distance,
+        distances.pdist(X, self.metric.w_ ** 2, dmat, self.distance_,
                         self.metric.symmetric)
+        # dmat = spatial.distance.squareform(spatial.distance.pdist(X, metric='cityblock', w=self.metric.w_ ** 2))
         # calculate K(D_w(x_i, x_j)) for all i, j pairs
         p_reference = self.transform(dmat)
         # set p_ii = 0, can't select self as reference sample
@@ -191,14 +205,14 @@ class ExponentialKernel(object):
         """
         # calculate probability of correct classification
         self.p_reference = self.probability_matrix(X)
-        p_correct = np.sum(p_reference * class_matrix, axis=1)
+        p_correct = np.sum(self.p_reference * class_matrix, axis=1)
         # caclulate weight adjustments for each feature
         def f(l):
             # calculate partial matrix 
-            d_mat = np.zeros_like(p_reference)
+            d_mat = np.zeros_like(self.p_reference)
             self.metric.partials(X, d_mat, l)
             # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
-            d_mat *= p_reference
+            d_mat *= self.p_reference
             # calculate p_i * sum(D_ij), j from 0 to N
             all_term = p_correct * d_mat.sum(axis=1)
             # weighted in-class distances using adjacency matrix,
@@ -382,7 +396,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                     class_matrix[i, j] = 1
 
         objective, loss = 0, np.inf
-        sample_weights = np.ones_like(self.coef_)
+        sample_weights = np.ones(X.shape[0])
         while abs(loss) > self.eta:
             new_objective = self.__fit(X, class_matrix, sample_weights, objective)
             loss = objective - new_objective
@@ -446,7 +460,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         """
         # caclulate weight adjustments
         gradients = self.kernel_.gradients(X, class_matrix,
-                                                          sample_weights)        
+                                            sample_weights)        
         # calculate objective function
         new_objective = self.objective(self.kernel_.p_reference,
                                        class_matrix,
@@ -520,8 +534,10 @@ def toy_dataset(n_features=1000):
 
 def main():
     X, y = toy_dataset(n_features=1000)
-    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001, metric='cityblock',
-                    kernel='exponential', solver='ncfs')
+    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001,
+                    metric='phi_s',
+                    kernel='exponential',
+                    solver='ncfs')
     from timeit import default_timer as timer
     times = np.zeros(1)
     # previous 181.82286000379972
@@ -529,6 +545,7 @@ def main():
     # parallel, jobs=1 = 124
     # expanding dims = 150s
     # vectorized 104
+    # NUMBA -- 80s w/ manhattan, euclidean doesnt' converge, sq does -- 80s
     for i in range(times.size):            
         start = timer()
         f_select.fit(X, y)
