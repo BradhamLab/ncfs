@@ -15,7 +15,8 @@ import numpy as np
 from scipy import spatial
 from sklearn import base, model_selection
 
-from ncfs_expanded import distances
+from . import distances
+from . import accelerated
 # import distances
 
 
@@ -120,6 +121,7 @@ class ExponentialKernel(object):
         self.sigma = sigma
         self.reg = reg
         self.metric = metric
+        self.transform_ = accelerated.exponential_transform
         self._set_distance()
 
     def _set_distance(self):
@@ -136,29 +138,15 @@ class ExponentialKernel(object):
 
     def transform(self, distance_matrix):
         """Apply a kernel transformation to a distance matrix."""
-        return np.exp(-1 * distance_matrix / self.sigma)
+        return self.transform_(distance_matrix, self.sigma)
 
     def probability_matrix(self, X):
-        # calculate D_w(x_i, x_j): sum(w_l^2 * |x_il - x_jl], l) for all i,j
-        dmat = np.zeros((X.shape[0], X.shape[0]), dtype=np.float64)
-        distances.pdist(X, self.metric.w_ ** 2, dmat, self.distance_,
-                        self.metric.symmetric)
-        # dmat = spatial.distance.squareform(spatial.distance.pdist(X, metric='cityblock', w=self.metric.w_ ** 2))
-        # calculate K(D_w(x_i, x_j)) for all i, j pairs
-        p_reference = self.transform(dmat)
-        # set p_ii = 0, can't select self as reference sample
-        np.fill_diagonal(p_reference, 0.0)
-        # add pseudocount if necessary to avoid dividing by zero
-        row_sums = p_reference.sum(axis=1)
-        n_zeros = sum(row_sums == 0)
-        if n_zeros > 0:
-            print('Adding pseudocounts to distance matrix to avoid ' +
-                  'dividing by zero.')
-            pseudocount = np.exp(-20)
-            row_sums += pseudocount
-        scale_factors = 1 / (row_sums)
-        p_reference = (p_reference.T * scale_factors).T
-        return p_reference
+        distance_matrix = np.zeros((X.shape[0], X.shape[0]))
+        return accelerated.probability_matrix(X, self.metric.w_,
+                                              distance_matrix,
+                                              self.distance_,
+                                              self.transform_,
+                                              self.sigma)
 
     def gradients(self, X, class_matrix, sample_weights):
         r"""
@@ -203,25 +191,9 @@ class ExponentialKernel(object):
             Gradient vector for each feature with respect to the objective
             function.
         """
-        # calculate probability of correct classification
-        self.p_reference = self.probability_matrix(X)
-        p_correct = np.sum(self.p_reference * class_matrix, axis=1)
-        # caclulate weight adjustments for each feature
-        def f(l):
-            # calculate partial matrix 
-            d_mat = np.zeros_like(self.p_reference)
-            self.metric.partials(X, d_mat, l)
-            # weighted distance matrix D_ij = d_ij * p_ij, p_ii = 0
-            d_mat *= self.p_reference
-            # calculate p_i * sum(D_ij), j from 0 to N
-            all_term = p_correct * d_mat.sum(axis=1)
-            # weighted in-class distances using adjacency matrix,
-            in_class_term = np.sum(d_mat * class_matrix, axis=1)
-            sample_terms = sample_weights * (all_term - in_class_term)
-            # calculate delta following gradient ascent 
-            return 1 / self.sigma * sample_terms.sum() - 2 * self.metric.w_[l] * self.reg
-        partials = np.vectorize(f)(range(self.metric.w_.size))
-        return partials
+        return accelerated.gradients(X, class_matrix, sample_weights,
+                                     self.metric, self.distance_,
+                                     self.transform_, self.sigma, self.reg)
 
 
 class NCFS(base.BaseEstimator, base.TransformerMixin):
