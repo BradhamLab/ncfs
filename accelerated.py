@@ -1,7 +1,7 @@
 import numpy as np
 import numba
 
-from . import distances
+import distances
 
 @numba.njit(parallel=True)
 def exponential_transform(D, sigma):
@@ -53,7 +53,7 @@ def probability_matrix(X, w, D, distance, transform, sigma):
     p_reference = (p_reference.T * scale_factors).T
     return p_reference
 
-@numba.njit(parallel=True)
+@numba.njit()
 def feature_gradient(X, class_matrix, sample_weights, p_reference, p_correct,
                      l, gradient_matrix, metric, sigma, reg):
     """
@@ -101,15 +101,13 @@ def gradients(X, class_matrix, sample_weights, metric,
                                      sigma)
     # a sample length vector of the correctly assigning sample i
     p_correct = (p_reference * class_matrix).sum(axis=1)
-    # (sample x sample) matrix to store gradients where element
-    # (i, j) is the gradient for w_l between samples i and j
-    # IT MIGHT BE NECESSARY TO CREATE THIS EACH TIME TO AVOID OVERWRITING
-    # WITH PARALLELIZATION
-    gradient_matrix = np.zeros((X.shape[0], X.shape[0]))
     for l in numba.prange(X.shape[1]):
+        # (sample x sample) matrix to store gradients where element
+        # (i, j) is the gradient for w_l between samples i and 
+        gradient_matrix = np.zeros((X.shape[0], X.shape[0]))
         partials[l] = feature_gradient(X, class_matrix, sample_weights,
                                        p_reference, p_correct, l,
                                        gradient_matrix, metric,
                                        sigma, reg)
             
-    return partials
+    return p_reference, partials
