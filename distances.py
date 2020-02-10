@@ -385,6 +385,7 @@ class PhiS(object):
         self.means_ = np.zeros((2, X.shape[0], X.shape[0]))
         self.ss_ = np.zeros_like(self.means_)
         self.v1_ = 0.0
+        print("Fitting PhiS distances")
         self.update_values(X, w)
         self.symmetric = False
     
@@ -433,8 +434,8 @@ class PhiS(object):
              * (2 * self.w_[l] * ((x - self.means_[0, i, j])**2) / self.v1_ + 1)
         dSyy = 2 * self.w_[l] * (y - self.means_[1, i, j])\
              * (2 * self.w_[l] * ((y - self.means_[1, i, j])**2) / self.v1_ + 1)
-        return (self.ss_[1, i, j] * dSxx - self.ss_[0, i, j] * dSyy)\
-                / (self.ss_[1, i, j] ** 2)
+        return ((self.ss_[1, i, j] * dSxx - self.ss_[0, i, j] * dSyy)\
+                / (self.ss_[1, i, j] ** 2))
 
     def partials(self, X, D, l):
         """
