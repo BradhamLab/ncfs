@@ -15,8 +15,8 @@ import numpy as np
 from scipy import spatial
 from sklearn import base, model_selection
 
-from . import distances
-from . import accelerated
+import distances
+import accelerated
 # import distances
 
 
@@ -431,10 +431,10 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             Objective reached by current iteration.
         """
         # caclulate weight adjustments
-        gradients = self.kernel_.gradients(X, class_matrix,
+        p_reference, gradients = self.kernel_.gradients(X, class_matrix,
                                             sample_weights)        
         # calculate objective function
-        new_objective = self.objective(self.kernel_.p_reference,
+        new_objective = self.objective(p_reference,
                                        class_matrix,
                                        sample_weights)
         # calculate loss from previous objective function
@@ -507,7 +507,7 @@ def toy_dataset(n_features=1000):
 def main():
     X, y = toy_dataset(n_features=1000)
     f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001,
-                    metric='phi_s',
+                    metric='manhattan',
                     kernel='exponential',
                     solver='ncfs')
     from timeit import default_timer as timer
@@ -518,6 +518,7 @@ def main():
     # expanding dims = 150s
     # vectorized 104
     # NUMBA -- 80s w/ manhattan, euclidean doesnt' converge, sq does -- 80s
+    # NUMBA -- 40S w/ manhattan + accelerated gradients
     for i in range(times.size):            
         start = timer()
         f_select.fit(X, y)
