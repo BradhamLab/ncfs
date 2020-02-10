@@ -434,8 +434,7 @@ class PhiS(object):
              * (2 * self.w_[l] * ((x - self.means_[0, i, j])**2) / self.v1_ + 1)
         dSyy = 2 * self.w_[l] * (y - self.means_[1, i, j])\
              * (2 * self.w_[l] * ((y - self.means_[1, i, j])**2) / self.v1_ + 1)
-        return ((self.ss_[1, i, j] * dSxx - self.ss_[0, i, j] * dSyy)\
-                / (self.ss_[1, i, j] ** 2))
+        return ((self.ss_[1, i, j] * dSxx - self.ss_[0, i, j] * dSyy) / (self.ss_[1, i, j] ** 2))
 
     def partials(self, X, D, l):
         """
@@ -596,7 +595,6 @@ class Manhattan(WeightedDistance):
                 res = self.sample_feature_partial(X, i, j, l)
                 D[i, j] = res
                 D[j, i] = res
-
 
 @numba.jitclass(basic_spec)
 class SqEuclidean(object):
