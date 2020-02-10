@@ -1,7 +1,7 @@
 import numpy as np
 import numba
 
-import distances
+from ncfs_expanded import distances
 
 @numba.njit(parallel=True)
 def exponential_transform(D, sigma):
@@ -56,11 +56,15 @@ def probability_matrix(X, w, D, distance, transform, sigma):
 @numba.njit()
 def feature_gradient(X, class_matrix, sample_weights, p_reference, p_correct,
                      l, gradient_matrix, metric, sigma, reg):
-    """
+    """[summary]
     
     Parameters
     ----------
     X : [type]
+        [description]
+    class_matrix : [type]
+        [description]
+    sample_weights : [type]
         [description]
     p_reference : [type]
         [description]
@@ -71,6 +75,10 @@ def feature_gradient(X, class_matrix, sample_weights, p_reference, p_correct,
     gradient_matrix : [type]
         [description]
     metric : [type]
+        [description]
+    sigma : [type]
+        [description]
+    reg : [type]
         [description]
     
     Returns
