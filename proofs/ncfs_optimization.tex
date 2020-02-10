@@ -103,26 +103,31 @@
                 D_w(x_i, x_j) = \sqrt{\sum \limits_{l = 1}^P
                                      w_l^2 \left ( x_{il} - x_{jl} \right ) ^ 2}
             \end{equation}
-        \item Squared Euclidean
+        \item Squared Euclidean, Squared L2
             \begin{equation}
                 D_w(x_i, x_j) = \sum \limits_{l = 1}^P
                                 w_l^2 \left ( x_{il} - x_{jl} \right ) ^ 2
             \end{equation}
         \item $\Phi_s$
-             \begin{equation}
-                D_w(x_i, x_j) = \sum \limits_{l = 1}^P
-                                \dfrac{Var_w(x_i - x_j)}{Var_w(x_i + x_j)}
-             \end{equation}
-             Where 
-             \begin{align*}
-                Var_w(x_i) &= \dfrac{\sum \limits_{l = 1}^P
+            \begin{equation}
+                D_w(x_i, x_j) = \dfrac{Var_w(x_i - x_j)}{Var_w(x_i + x_j)}
+            \end{equation}
+            Where 
+            \begin{equation}
+                Var_w(x_i) = \dfrac{\sum \limits_{l = 1}^P
                                        \left w^2(x_{il} - \mu_{x_i}^w \right)^2}
-                                    {V_1 - \dfrac{V_2}{V_1}} \\
-                V_1 &= \sum \limits_{l = 1}^P w_{l} ^ 2\\
-                V_2 &= \sum \limits_{l = 1}^P w_{l} ^ 4 \\
-                \mu_{x_i}^w &= \dfrac{\sum \limits_{l = 1}^P x_{il}\cdot  w_l^2}
+                                    {V_1 - \dfrac{V_2}{V_1}}
+            \end{equation}
+            \begin{equation}
+                V_1 = \sum \limits_{l = 1}^P w_{l} ^ 2\\
+            \end{equation}
+            \begin{equation}
+                V_2 = \sum \limits_{l = 1}^P w_{l} ^ 4 \\
+            \end{equation}
+            \begin{equation}
+                \mu_{x_i}^w = \dfrac{\sum \limits_{l = 1}^P x_{il}\cdot  w_l^2}
                                {V_1}
-             \end{align*}
+            \end{equation}
     \end{enumerate}
 
 \end{section}
@@ -326,6 +331,46 @@
     \end{align*}
 
 
+\end{section}
+\begin{section}{Partial Derivative of Distance Metrics}
+    \begin{subsection}{L1 Distance}
+        \begin{align*}
+            D_w(x_i, x_j) &= \sum \limits_{l = 1}^P
+                             w_l^2 \left | x_{il} - x_{jl} \right | \\
+            \dfrac{\partial D_w(x_i, x_j)}{\partial w_l} 
+                &= \sum \limits_{l = 1}^P \dfrac{\partial}{\partial w_l} 
+                    w_l^2 \left | x_{il} - x_{jl} \right | \\
+            \dfrac{\partial D_w(x_i, x_j)}{\partial w_l} 
+                &= w_l^2 \left | x_{il} - x_{jl} \right |
+        \end{align*}
+    \end{subsection}
+    \begin{subsection}{L2 Distance}
+        \begin{align*}
+            D_w(x_i, x_j) &= \sqrt{\sum \limits_{l = 1}^P
+                                   w_l^2 \left ( x_{il} - x_{jl} \right ) ^ 2}\\
+            \dfrac{\partial D_w(x_i, x_j)}{\partial w_l}
+                &= \frac{\partial}{\partial w_l} \sqrt{\sum \limits_{l = 1}^P
+                   w_l^2 \left ( x_{il} - x_{jl} \right ) ^ 2} \\
+                &= \frac{\partial}{\partial w_l}
+                   \left (\sum \limits_{l = 1}^P
+                          w_l^2 \left ( x_{il} - x_{jl} \right ) ^ 2 \right )^{\frac{1}{2}}\\
+                &= \dfrac{1}{2 \sqrt{ \sum \limits_{l=1}^P w_l^2 \left ( x_{il} - x_{jl} \right ) ^ 2)}}
+                   \frac{\partial}{\partial w_l} \sum \limits_{l=1}^P w_l^2 \left ( x_{il} - x_{jl} \right ) ^ 2 \\
+            \dfrac{\partial D_w(x_i, x_j)}{\partial w_l}
+                   &= \dfrac{w_l \left (x_{il} - x_{jl} \right ) ^ 2}{D_w(x_i, x_j)}
+        \end{align*}
+    \end{subsection}
+    \begin{subsection}{Squared L2 Distance}
+        \begin{align*}
+            D_w(x_i, x_j) &= \sum \limits_{l = 1}^P
+                             w_l^2 \left ( x_{il} - x_{jl} \right ) ^ 2 \\
+            \dfrac{\partial D_w(x_i, x_j)}{\partial w_l}
+                &= \sum \limits_{l = 1}^P \frac{\partial}{\partial w_l} 
+                    w_l^2 \left ( x_{il} - x_{jl} \right ) ^ 2 \\
+            \dfrac{\partial D_w(x_i, x_j)}{\partial w_l}
+                &= 2w_l \left (x_{il} - x_{jl} \right ) ^ 2 
+        \end{align*}
+    \end{subsection}
 \end{section}
 
 \end{document}
