@@ -7,8 +7,7 @@ https://doi.org/10.4304/jcp.7.1.161-168
 
 Author : Dakota Hawkins
 """
-from tempfile import mkdtemp
-import os
+import warnings
 
 import numba
 import numpy as np
@@ -126,10 +125,12 @@ class ExponentialKernel(object):
 
     def _set_distance(self):
         if isinstance(self.metric, distances.PhiS):
+            warnings.warn("PhiS distance may result in segmentation fault.")
             self.distance_ = distances.phi_s
         elif isinstance(self.metric, distances.Manhattan):
             self.distance_ = distances.manhattan
         elif isinstance(self.metric, distances.Euclidean):
+            warnings.warn("Euclidean distance may not converge.")
             self.distance_ = distances.euclidean
         elif isinstance(self.metric, distances.SqEuclidean):
             self.distance_ = distances.sqeuclidean
