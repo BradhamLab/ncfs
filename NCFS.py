@@ -348,15 +348,45 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
 
     @staticmethod
     def calculate_sample_weights(y):
+        """
+        Calculate balanced sample weights. 
+        
+        Parameters
+        ----------
+        y : [type]
+            [description]
+        """
         labels, counts = np.unique(y, return_counts=True)
+        n_labels = len(labels)
         sample_weights = np.zeros(y.size)
-        min_weight = counts.min()
-        for label, weight in zip(labels, counts):
-            sample_weights[np.where(y == label)[0]] = weight / min_weight
+        # max_count = counts.max()
+        for label, count in zip(labels, counts):
+            # calculate w = (n_samples) / (n_classes * |c_i|)
+            # -> can be less than 1, might not be great
+            # optional: scale to set min to 1
+            # different calc (2*max_c - c) / (max_c), w in [1, 2]
+            weight = y.size / (n_labels * count)
+            sample_weights[np.where(y == label)[0]] = weight
         return sample_weights
 
     @staticmethod
     def calculate_class_matrix(y):
+        """
+        Construct adjacency matrix of class membership.
+
+        Construct matrix of class membership such that a_ij == 1 if sample
+        i and j share the class label. 
+        
+        Parameters
+        ----------
+        y : numpy.ndarray
+            A sample-length vector of class labels.
+        
+        Returns
+        -------
+        numpy.ndarray
+            Adjacency matrix for class membership.
+        """
         # construct adjacency matrix of class membership for matrix mult. 
         class_matrix = np.zeros((y.size, y.size), np.float64)
         for i in range(y.size):
@@ -451,8 +481,6 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             X = NCFS.__check_X(X)
         return X * self.coef_ ** 2
 
-    
-
     def __partial_fit(self, X, class_matrix, sample_weights):
         """
         Underlying method to fit NCFS model.
@@ -514,10 +542,10 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         """
         self.__check_X(X)
         self.__check_params(X, y)
-        sample_weights = self.__check_sample_weights(sample_weights)
+        sample_weights = self.__check_sample_weights(y, sample_weights)
         class_matrix = self.calculate_class_matrix(y)
-        p_reference = self.kernel.probability_matrix(X)
-        return objective(p_reference, class_matrix, sample_weights)
+        p_reference = self.kernel_.probability_matrix(X)
+        return self.objective(p_reference, class_matrix, sample_weights)
 
 
 def toy_dataset(n_features=1000, n1=100, n2=100):
@@ -573,13 +601,13 @@ def toy_dataset(n_features=1000, n1=100, n2=100):
                       bad_features[:, :second_idx],
                       class_data[:, 1].reshape(-1, 1),
                       bad_features[:, second_idx:]))
-    classes = np.array([0]*100 + [1]*100)
+    classes = np.array([0]*n1 + [1]*n2)
     # scale between 0 - 1
     x_std = (data - data.min(axis=0)) / (data.max(axis=0) - data.min(axis=0))
     return x_std, classes
 
 def main():
-    X, y = toy_dataset(n_features=1000, n1=100, n2=100)
+    X, y = toy_dataset(n_features=1000, n1=150, n2=50)
     f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001,
                     metric='manhattan',
                     kernel='exponential',
