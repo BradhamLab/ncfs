@@ -65,31 +65,7 @@ class NCFSOptimizer(object):
             else:
                 self.alpha *= 0.4
         return steps
-
-
-@numba.njit(parallel=True)
-def exp_gradient(p_reference, p_correct, partial, class_matrix,
-                 weight, reg, sigma):
-    # weighted partial matrix D_ij = d_ij * p_ij, p_ii = 0
-    fuzzy_partials = partial * p_reference
-    # calculate p_i * sum(D_ij), j from 0 to N
-    all_term = p_correct * fuzzy_partials.sum(axis=1)
-    # weighted in-class distances using adjacency matrix,
-    in_class_term = np.sum(fuzzy_partials * class_matrix, axis=1)
-    val =  0.0
-    for i in numba.prange(all_term.size):
-        val += (all_term[i] - in_class_term[i])
-    out = ((1.0 / sigma) * val - 2.0 * reg * weight)
-    return out
-
-@numba.njit(parallel=True)
-def feature_gradients(p_reference, p_correct, partials, weights,
-                      class_matrix, reg, sigma, gradients):
-    for l in numba.prange(gradients.size):
-        gradients[l] = exp_gradient(p_reference, p_correct, partials[:, :, l],
-                                    class_matrix, weights[l], reg, sigma)
-    return gradients
-
+        
  
 class ExponentialKernel(object):
     """Base class for kernel functions."""
@@ -367,7 +343,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             labels, counts = np.unique(y, return_counts=True)
             sample_weights = np.zeros(n_samples)
             for label, weight in zip(labels, counts):
-                sample_weights[np.where(y == label)[0]] = 1.0 / weight
+                sample_weights[np.where(y == label)[0]] = weight / min(counts)
         else:
             if isinstance(sample_weights, list):
                 sample_weights = np.array(sample_weights) 
@@ -387,11 +363,12 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                     class_matrix[i, j] = 1
 
         score, loss = 0, np.inf
-
+        i = 0
         while abs(loss) > self.eta:
             self.__partial_fit(X, class_matrix, sample_weights, score)
             loss = score - self.score_
             score = self.score_
+            i += 1
         return self
 
     def transform(self, X):
@@ -537,7 +514,7 @@ def main():
     # NUMBA -- 40S w/ manhattan + accelerated gradients
     for i in range(times.size):            
         start = timer()
-        f_select.fit(X, y)
+        f_select.fit(X, y, sample_weights='balanced')
         end = timer()
         times[i] = end - start
     print("Average execution time in seconds: {}".format(np.mean(times)))
