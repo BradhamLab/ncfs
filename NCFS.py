@@ -349,12 +349,27 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
     @staticmethod
     def calculate_sample_weights(y):
         """
-        Calculate balanced sample weights. 
+        Calculate balanced sample weights.
+
+        Calculates balanced sample weights per scikit-learn documentation, where
+
+        class_weight = (n_samples) / (n_classes * class_size)
         
         Parameters
         ----------
-        y : [type]
-            [description]
+        y : numpy.ndarray
+            A sample-length vector of class labels.
+
+        Returns
+        -------
+        numpy.ndarray
+            A sample-length vector of class-balanced sample weights.
+        
+        References
+        ----------
+        https://scikit-learn.org/stable/modules/generated/sklearn.utils.class_weight.compute_class_weight.html
+
+        Logistic Regression in Rare Events Data, King, Zen, 2001
         """
         labels, counts = np.unique(y, return_counts=True)
         n_labels = len(labels)
