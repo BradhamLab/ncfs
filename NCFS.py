@@ -18,7 +18,6 @@ import distances
 import accelerated
 # import distances
 
-
 class NCFSOptimizer(object):
     """Gradient ascent/descent optimization following NCFS protocol."""
 
@@ -290,13 +289,16 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                              'Got {}.'.format(type(y)))
         if y.shape[0] != X.shape[0]:
             raise ValueError('`X` and `y` must have the same row numbers.')
-        n_samples, self.n_features_ = X.shape
-        # initialize all weights as 1
+        self.n_features_ = X.shape[1]
+        # check if model has been previously fit
         if not self.warm_start:
+            # initialize objective score as zero
             self.score_ = 0
+            # initialize all weights as 1
             self.coef_ = np.ones(self.n_features_, dtype=np.float64)
             self.warm_start = True
         else:
+            # if not warm start, ensure expected .coef_ structure
             if not isinstance(self.coef_, np.ndarray):
                 raise ValueError("Expected numpy array for self.coef_ "
                                  "during warm start. Got {}.".format(
@@ -363,6 +365,18 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                     class_matrix[i, j] = 1
         return class_matrix
 
+    def partial_fit(self, X, y, sample_weights=None):
+        if sample_weights == 'balanced':
+            raise ValueError("Balanced sample weights is unsupported during "
+                             "partial fit. If balanced weights are desired, "
+                             "call `NCFS.calculate_sample_weights()` on "
+                             "either a representative sample or the complete "
+                             "set of labels for the given dataset.")
+        self.__check_params(X, y)
+        class_matrix = NCFS.calculate_class_matrix(y)
+        sample_weights = NCFS.__check_sample_weights(y, sample_weights)
+        return self.__partial_fit(X, class_matrix, sample_weights)
+
     def fit(self, X, y, sample_weights=None):
         """
         Fit feature weights using Neighborhood Component Feature Selection.
@@ -388,7 +402,6 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.__check_params(X, y)
         class_matrix = NCFS.calculate_class_matrix(y)
         sample_weights = NCFS.__check_sample_weights(y, sample_weights)
-        sample_weights = np.ones(X.shape[0])
         loss, i = np.inf, 0
         # iterate until convergence
         while abs(loss) > self.eta and i < self.max_iter:
@@ -477,7 +490,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         return score
 
 
-def toy_dataset(n_features=1000):
+def toy_dataset(n_features=1000, n1=100, n2=100):
     """
     Generate a toy dataset with features from the original NCFS paper.
     
@@ -491,6 +504,10 @@ def toy_dataset(n_features=1000):
     n_features : int, optional
         Number of total features. Two of these features will feature signal,
         the other N - 2 will be noise. The default is 1000.
+    n1 : int, optional
+        Number of samples in population 1. Default is 100.
+    n2 : int, optional
+        Number of samples in population 2. Default is 100.
     
     Returns
     -------
@@ -502,8 +519,8 @@ def toy_dataset(n_features=1000):
             Class membership for each sample in X.
     """
 
-    class_1 = np.zeros((100, 2))
-    class_2 = np.zeros((100, 2))
+    class_1 = np.zeros((n1, 2))
+    class_2 = np.zeros((n2, 2))
     cov = np.identity(2)
     for i in range(100):
         r1, r2 = np.random.rand(2)
@@ -553,6 +570,7 @@ def main():
     sorted_coef = np.argsort(-1 * f_select.coef_)
     print(sorted_coef[:10])
     print(f_select.coef_[0], f_select.coef_[100], f_select.coef_[sorted_coef[2]])
+    print(f_select.partial_fit(X, y))
 
 if __name__ == '__main__':
     main()
