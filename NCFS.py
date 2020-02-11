@@ -66,7 +66,6 @@ class NCFSOptimizer(object):
                 self.alpha *= 0.4
         return steps
         
- 
 class ExponentialKernel(object):
     """Base class for kernel functions."""
 
@@ -186,7 +185,8 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
     """
 
     def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
-                 metric='cityblock', kernel='exponential', solver='ncfs'):
+                 metric='cityblock', kernel='exponential', solver='ncfs',
+                 max_iter=1000, warm_start=False):
         """
         Class to perform Neighborhood Component Feature Selection 
 
@@ -253,15 +253,17 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.metric = metric
         self.kernel = kernel
         self.solver = solver
-        self.coef_ = None
-        self.score_ = None
+        self.max_iter = max_iter
+        self.warm_start = warm_start
 
     @staticmethod
     def __check_X(X):
         mins = np.min(X, axis=0)
         maxes = np.max(X, axis=0)
         if any(mins < 0) or any(maxes > 1):
-            print('Best to have values in X between 0 and 1.')
+            warnings.warn("Data matrix contains values outside of the [0, 1] "
+                          "interval. May be numerical unstable and lead to "
+                          "pseudocount additions during fitting.")
         return X.astype(np.float64)
 
     def __check_params(self, X, y):
@@ -288,9 +290,21 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                              'Got {}.'.format(type(y)))
         if y.shape[0] != X.shape[0]:
             raise ValueError('`X` and `y` must have the same row numbers.')
-        n_samples, n_features = X.shape
+        n_samples, self.n_features_ = X.shape
         # initialize all weights as 1
-        self.coef_ = np.ones(n_features, dtype=np.float64)
+        if not self.warm_start:
+            self.score_ = 0
+            self.coef_ = np.ones(self.n_features_, dtype=np.float64)
+            self.warm_start = True
+        else:
+            if not isinstance(self.coef_, np.ndarray):
+                raise ValueError("Expected numpy array for self.coef_ "
+                                 "during warm start. Got {}.".format(
+                                     type(self.coef_)))
+            if self.coef_.size != self.n_features_:
+                raise ValueError("Expected {} ".format(self.coef_.size) +\
+                                 "features on warm start. Got {}.".format(
+                                     self.n_features_))
         # check distance metric
         if self.metric.lower() not in distances.supported_distances:
             raise ValueError("Unsupported distance metric {}".\
@@ -300,8 +314,8 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         # intialize kernel function
         if self.kernel == 'exponential':
             X = NCFS.__check_X(X)
-            self.kernel_ = ExponentialKernel(self.sigma, self.reg, n_features,
-                                             self.metric_)
+            self.kernel_ = ExponentialKernel(self.sigma, self.reg,
+                                             self.n_features_, self.metric_)
         else:
             raise ValueError('Unsupported kernel function: {}'\
                              .format(self.kernel))
@@ -311,8 +325,43 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         else:
             raise ValueError('Unsupported gradient ascent method{}'.\
                              format(self.solver))
-        return (n_samples, n_features)
 
+    @staticmethod
+    def __check_sample_weights(y, sample_weights):
+        if sample_weights is None:
+            sample_weights = np.ones(y.size)
+        elif sample_weights == 'balanced':
+            sample_weights = NCFS.calculate_sample_weights(y)
+        else:
+            if isinstance(sample_weights, list):
+                sample_weights = np.array(sample_weights) 
+            if isinstance(sample_weights, np.ndarray):
+                if sample_weights.size != y.size:
+                    raise ValueError("Size of sample weight array does not "
+                                     "match size of samples.")
+            else:
+                raise TypeError("Unsupported type for sample weights: "
+                                "{}".format(type(sample_weights)))
+        return sample_weights
+
+    @staticmethod
+    def calculate_sample_weights(y):
+        labels, counts = np.unique(y, return_counts=True)
+        sample_weights = np.zeros(y.size)
+        min_weight = counts.min()
+        for label, weight in zip(labels, counts):
+            sample_weights[np.where(y == label)[0]] = weight / min_weight
+        return sample_weights
+
+    @staticmethod
+    def calculate_class_matrix(y):
+        # construct adjacency matrix of class membership for matrix mult. 
+        class_matrix = np.zeros((y.size, y.size), np.float64)
+        for i in range(y.size):
+            for j in range(y.size):
+                if y[i] == y[j] and i != j:
+                    class_matrix[i, j] = 1
+        return class_matrix
 
     def fit(self, X, y, sample_weights=None):
         """
@@ -336,39 +385,19 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             Fitted NCFS object with weights stored in the `.coef_` instance
             variable.
         """
-        n_samples, n_features = self.__check_params(X, y)
-        if sample_weights is None:
-            sample_weights = np.ones(n_samples)
-        elif sample_weights == 'balanced':
-            labels, counts = np.unique(y, return_counts=True)
-            sample_weights = np.zeros(n_samples)
-            for label, weight in zip(labels, counts):
-                sample_weights[np.where(y == label)[0]] = weight / min(counts)
-        else:
-            if isinstance(sample_weights, list):
-                sample_weights = np.array(sample_weights) 
-            if isinstance(sample_weights, np.ndarray):
-                if sample_weights.size != n_samples:
-                    raise ValueError("Size of sample weight array does not "
-                                     "match size of samples.")
-            else:
-                raise TypeError("Unsupported type for sample weights: "
-                                "{}".format(type(sample_weights)))
-
-        # construct adjacency matrix of class membership for matrix mult. 
-        class_matrix = np.zeros((n_samples, n_samples), np.float64)
-        for i in range(n_samples):
-            for j in range(n_samples):
-                if y[i] == y[j] and i != j:
-                    class_matrix[i, j] = 1
-
-        score, loss = 0, np.inf
-        i = 0
-        while abs(loss) > self.eta:
-            self.__partial_fit(X, class_matrix, sample_weights, score)
-            loss = score - self.score_
-            score = self.score_
+        self.__check_params(X, y)
+        class_matrix = NCFS.calculate_class_matrix(y)
+        sample_weights = NCFS.__check_sample_weights(y, sample_weights)
+        sample_weights = np.ones(X.shape[0])
+        loss, i = np.inf, 0
+        # iterate until convergence
+        while abs(loss) > self.eta and i < self.max_iter:
+            loss = self.__partial_fit(X, class_matrix, sample_weights)
             i += 1
+        if i >= self.max_iter:
+            warnings.warn("Number of max iterations reached before convergence."
+                          "Fit may be poor. Consider increasing the number of "
+                          "max number of iterations.")
         return self
 
     def transform(self, X):
@@ -397,7 +426,9 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             its learnt weight.
         """
 
-        if self.coef_ is None:
+        try:
+            self.coef_
+        except NameError:
             raise RuntimeError('NCFS is not fit. Please fit the ' +
                                'estimator by calling `.fit()`.')
         if X.shape[1] != len(self.coef_):
@@ -407,7 +438,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             X = NCFS.__check_X(X)
         return X * self.coef_ ** 2
 
-    def __partial_fit(self, X, class_matrix, sample_weights, score):
+    def __partial_fit(self, X, class_matrix, sample_weights):
         """
         Underlying method to fit NCFS model.
         
@@ -431,13 +462,14 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         # calculate objective function
         new_score = self.objective(p_reference, class_matrix, sample_weights)
         # calculate loss from previous objective function
-        loss = new_score - score
+        loss = new_score - self.score_
         # update weights
         deltas = self.solver_.get_steps(gradients, loss)
         self.coef_ = self.coef_ + deltas
         # return objective score for new iteration
         self.metric_.update_values(X, self.coef_)
         self.score_ = new_score
+        return loss
 
     def objective(self, p_reference, class_matrix, sample_weights):
         score = np.sum((p_reference * class_matrix).T * sample_weights) \
@@ -514,7 +546,7 @@ def main():
     # NUMBA -- 40S w/ manhattan + accelerated gradients
     for i in range(times.size):            
         start = timer()
-        f_select.fit(X, y, sample_weights='balanced')
+        f_select.fit(X, y, sample_weights=None)
         end = timer()
         times[i] = end - start
     print("Average execution time in seconds: {}".format(np.mean(times)))
