@@ -386,13 +386,12 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                 if y[i] == y[j] and i != j:
                     class_matrix[i, j] = 1
 
-        objective, loss = 0, np.inf
+        score, loss = 0, np.inf
 
         while abs(loss) > self.eta:
-            new_objective = self.__fit(X, class_matrix, sample_weights, objective)
-            loss = objective - new_objective
-            objective = new_objective
-        self.score_ = objective
+            self.__partial_fit(X, class_matrix, sample_weights, score)
+            loss = score - self.score_
+            score = self.score_
         return self
 
     def transform(self, X):
@@ -431,7 +430,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             X = NCFS.__check_X(X)
         return X * self.coef_ ** 2
 
-    def __fit(self, X, class_matrix, sample_weights, objective):
+    def __partial_fit(self, X, class_matrix, sample_weights, score):
         """
         Underlying method to fit NCFS model.
         
@@ -441,7 +440,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             A sample by feature data matrix.
         class_matrix : numpy.ndarray
             A sample by sample one-hot matrix marking samples in the same class.
-        objective : float
+        score : float
             Objective score reached from past iteration
         
         Returns
@@ -453,17 +452,15 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         p_reference, gradients = self.kernel_.gradients(X, class_matrix,
                                             sample_weights)        
         # calculate objective function
-        new_objective = self.objective(p_reference,
-                                       class_matrix,
-                                       sample_weights)
+        new_score = self.objective(p_reference, class_matrix, sample_weights)
         # calculate loss from previous objective function
-        loss = new_objective - objective
+        loss = new_score - score
         # update weights
         deltas = self.solver_.get_steps(gradients, loss)
         self.coef_ = self.coef_ + deltas
         # return objective score for new iteration
         self.metric_.update_values(X, self.coef_)
-        return new_objective
+        self.score_ = new_score
 
     def objective(self, p_reference, class_matrix, sample_weights):
         score = np.sum((p_reference * class_matrix).T * sample_weights) \
