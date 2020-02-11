@@ -185,7 +185,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
 
     def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
                  metric='cityblock', kernel='exponential', solver='ncfs',
-                 max_iter=1000, warm_start=False):
+                 max_iter=1000):
         """
         Class to perform Neighborhood Component Feature Selection 
 
@@ -210,6 +210,8 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             are 'exponential'.
         solver : str, optional
             Method to perform gradient ascent. Possible values are 'ncfs'.
+        max_iter : int, optional
+            Number of max iterations. Default is 1000.
 
         Attributes:
         ----------
@@ -253,7 +255,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.kernel = kernel
         self.solver = solver
         self.max_iter = max_iter
-        self.warm_start = warm_start
+        self.warm_start_ = False
 
     @staticmethod
     def __check_X(X):
@@ -289,14 +291,16 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                              'Got {}.'.format(type(y)))
         if y.shape[0] != X.shape[0]:
             raise ValueError('`X` and `y` must have the same row numbers.')
+        if self.max_iter is None:
+            self.max_iter = np.inf
         self.n_features_ = X.shape[1]
         # check if model has been previously fit
-        if not self.warm_start:
+        if not self.warm_start_:
             # initialize objective score as zero
             self.score_ = 0
             # initialize all weights as 1
             self.coef_ = np.ones(self.n_features_, dtype=np.float64)
-            self.warm_start = True
+            self.warm_start_ = True
         else:
             # if not warm start, ensure expected .coef_ structure
             if not isinstance(self.coef_, np.ndarray):
