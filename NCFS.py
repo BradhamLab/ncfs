@@ -451,6 +451,8 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             X = NCFS.__check_X(X)
         return X * self.coef_ ** 2
 
+    
+
     def __partial_fit(self, X, class_matrix, sample_weights):
         """
         Underlying method to fit NCFS model.
@@ -489,6 +491,34 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                       - self.reg * np.dot(self.coef_, self.coef_)
         return score
 
+    def score(self, X, y, sample_weights=None):
+        """
+        Score the current fit of an NCFS object.
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix.
+        y : numpy.ndarray
+            A sample-length vector of class labels
+        sample_weights : numpy.ndarray, string, None, optional
+            Weights for each sample. Default is none and each sample will have
+            a weight of 1. If 'balanced' is passed, weights proportional to
+            class frequency are calculated. 
+        
+        Returns
+        -------
+        float
+            Regularized accuracy in a KNN classifier during leave-one-out
+            validation.
+        """
+        self.__check_X(X)
+        self.__check_params(X, y)
+        sample_weights = self.__check_sample_weights(sample_weights)
+        class_matrix = self.calculate_class_matrix(y)
+        p_reference = self.kernel.probability_matrix(X)
+        return objective(p_reference, class_matrix, sample_weights)
+
 
 def toy_dataset(n_features=1000, n1=100, n2=100):
     """
@@ -522,12 +552,14 @@ def toy_dataset(n_features=1000, n1=100, n2=100):
     class_1 = np.zeros((n1, 2))
     class_2 = np.zeros((n2, 2))
     cov = np.identity(2)
-    for i in range(100):
-        r1, r2 = np.random.rand(2)
+    for i in range(n1):
+        r1 = np.random.rand()
         if r1 > 0.5:
             class_1[i, :] = np.random.multivariate_normal([-0.75, -3], cov)
         else:
             class_1[i, :] = np.random.multivariate_normal([0.75, 3], cov)
+    for i in range(n2):
+        r2 = np.random.rand()
         if r2 > 0.5:
             class_2[i, :] = np.random.multivariate_normal([3, -3], cov)
         else:
@@ -536,7 +568,7 @@ def toy_dataset(n_features=1000, n1=100, n2=100):
     n_irrelevant = n_features - 2
     second_idx = int(0.1*(n_features)) - 1
     bad_features = np.random.normal(loc=0, scale=np.sqrt(20),
-                                    size=(200, n_irrelevant))
+                                    size=(n1 + n2, n_irrelevant))
     data = np.hstack((class_data[:, 0].reshape(-1, 1),
                       bad_features[:, :second_idx],
                       class_data[:, 1].reshape(-1, 1),
@@ -547,7 +579,7 @@ def toy_dataset(n_features=1000, n1=100, n2=100):
     return x_std, classes
 
 def main():
-    X, y = toy_dataset(n_features=1000)
+    X, y = toy_dataset(n_features=1000, n1=100, n2=100)
     f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001,
                     metric='manhattan',
                     kernel='exponential',
@@ -563,14 +595,14 @@ def main():
     # NUMBA -- 40S w/ manhattan + accelerated gradients
     for i in range(times.size):            
         start = timer()
-        f_select.fit(X, y, sample_weights=None)
+        f_select.fit(X, y, sample_weights='balanced')
         end = timer()
         times[i] = end - start
     print("Average execution time in seconds: {}".format(np.mean(times)))
     sorted_coef = np.argsort(-1 * f_select.coef_)
     print(sorted_coef[:10])
     print(f_select.coef_[0], f_select.coef_[100], f_select.coef_[sorted_coef[2]])
-    print(f_select.partial_fit(X, y))
+    print(f_select.score(X, y))
 
 if __name__ == '__main__':
     main()
