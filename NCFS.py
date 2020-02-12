@@ -210,8 +210,9 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             are 'exponential'.
         solver : str, optional
             Method to perform gradient ascent. Possible values are 'ncfs'.
-        max_iter : int, optional
-            Number of max iterations. Default is 1000.
+        max_iter : int, None, optional
+            Number of max iterations during fitting. Default is 1000. If None,
+            fitting will continue until convergence.
 
         Attributes:
         ----------
@@ -293,6 +294,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             raise ValueError('`X` and `y` must have the same row numbers.')
         if self.max_iter is None:
             self.max_iter = np.inf
+
         self.n_features_ = X.shape[1]
         # check if model has been previously fit
         if not self.warm_start_:
@@ -424,7 +426,8 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.__check_params(X, y)
         class_matrix = NCFS.calculate_class_matrix(y)
         sample_weights = NCFS.__check_sample_weights(y, sample_weights)
-        return self.__partial_fit(X, class_matrix, sample_weights)
+        self.__partial_fit(X, class_matrix, sample_weights)
+        return self
 
     def fit(self, X, y, sample_weights=None):
         """
