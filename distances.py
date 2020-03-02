@@ -62,6 +62,8 @@ def variance(x, w=_mock_ones):
         mean += x[i] * w[i]
         sum_of_weights += w[i]
         sum_of_squared_weights += w[i] ** 2
+    if sum_of_weights == 0:
+        return np.nan
     mean = mean / sum_of_weights
     for i in range(x.shape[0]):
         result += w[i] * (x[i] - mean) ** 2
@@ -731,9 +733,9 @@ class Euclidean(object):
         float
             Partial derivative of `Phi_s(x, y)` for feature `l`. 
         """
-        if i == j:
+        if self.dist_[i, j] == 0:
             return 0
-        return self.w_[l] * (X[i, l] - X[j, l]) / self.dist_[i, j]
+        return self.w_[l] * (X[i, l] - X[j, l]) ** 2 / self.dist_[i, j]
 
     def partials(self, X, D, l):
         r"""
