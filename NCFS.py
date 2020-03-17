@@ -14,8 +14,8 @@ import numpy as np
 from scipy import spatial
 from sklearn import base, model_selection
 
-import distances
-import accelerated
+from ncfs_expanded import distances
+from ncfs_expanded import accelerated
 # import distances
 
 class NCFSOptimizer(object):
@@ -501,7 +501,8 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                              'number of features as learnt feature weights.')
         if self.kernel == 'exponential':
             X = NCFS.__check_X(X)
-        return X * self.coef_ ** 2
+        # do not square weights when transforming -- break expected behavior
+        return X * self.coef_
 
     def __partial_fit(self, X, class_matrix, sample_weights):
         """
