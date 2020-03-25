@@ -1,7 +1,7 @@
 import numpy as np
 import numba
 
-from ncfs_expanded import distances
+from . import distances
 
 @numba.njit(parallel=True)
 def exponential_transform(D, sigma):

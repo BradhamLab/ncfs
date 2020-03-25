@@ -707,7 +707,7 @@ class Euclidean(object):
 
     def update_values(self, X, w):
         self.dist_ *= 0
-        pdist(X, w, self.dist_, euclidean)
+        pdist(X, w, self.dist_, euclidean, symmetric=self.symmetric)
         self.w_ = w
 
     def distance(self, x, y, w=_mock_ones):
@@ -735,7 +735,92 @@ class Euclidean(object):
         """
         if self.dist_[i, j] == 0:
             return 0
-        return self.w_[l] * (X[i, l] - X[j, l]) ** 2 / self.dist_[i, j]
+        return self.w_[l] * (X[i, l] - X[j, l]) ** 2 #/ self.dist_[i, j]
+
+    def partials(self, X, D, l):
+        r"""
+        Caculate :math:`\frac{\partial L2}{\partial w_l}` for all samples `i`
+        and `j`. 
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix.
+        D : numpy.ndarray
+            A (sample x sample) matrix for storing derivatives.
+        l : int
+            The `lth` feature in `X`. 
+        
+        Returns
+        -------
+        numpy.ndarray
+            Matrix of partial derivative of `Phi_s(x, y)` for feature `l` over
+            all samples `x` and `y`. 
+        """
+        for i in numba.prange(X.shape[0]):
+            for j in numba.prange(i, X.shape[0]):
+                res = self.sample_feature_partial(X, i, j, l)
+                D[i, j] = res
+                D[j, i] = res
+
+
+centered_spec = euclidean_spec + [('dist_avg_', numba.float64[:])]
+@numba.jitclass(centered_spec)
+class CenteredSqEuc(object):
+    r"""
+    Calculate partial derivatives for weighted squared euclidean distance.
+    
+    .. math::
+
+        L2(X, Y) = \sum \limits_{i = 1}^N w_l^2 (x_i - y_i)^2 
+    """
+
+    def __init__(self, X, w):
+        r"""
+        Class for quick calculuations of
+        :math:`\frac{\partial L2}{\partial w_l}`.
+        
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feature) data matrix.
+        w : numpy.ndarray
+            A (feature) length vector of feature weights.
+        """
+        self.dist_ = np.zeros((X.shape[0], X.shape[0]))
+        self.dist_avg_ = np.zeros(X.shape[0])
+        self.symmetric = False
+        self.update_values(X, w)
+
+    def update_values(self, X, w):
+        self.dist_ *= 0
+        pdist(X, w, self.dist_, sqeuclidean, symmetric=self.symmetric)
+        self.dist_avg_ = np_mean(self.dist_, 1)
+        self.w_ = w
+
+    def sample_feature_partial(self, X, i, j, l):
+        """
+        Calculate `d SqEuc(x_i, x_j) / d w_l`.
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            A (sample x feautre) data matrix.
+        i : int
+            The ith sample in `X`.
+        j : int
+            The jth sample in `X`.
+        l : int
+            The lth feature in `X`.
+        
+        Returns
+        -------
+        float
+            Partial derivative of `Phi_s(x, y)` for feature `l`. 
+        """
+        if self.dist_[i, j] == 0:
+            return 0
+        return self.w_[l] * (X[i, l] - X[j, l]) ** 2 - self.dist_avg_[i]
 
     def partials(self, X, D, l):
         r"""

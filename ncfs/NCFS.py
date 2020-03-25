@@ -14,8 +14,8 @@ import numpy as np
 from scipy import spatial
 from sklearn import base, model_selection
 
-from ncfs_expanded import distances
-from ncfs_expanded import accelerated
+from . import distances
+from . import accelerated
 # import distances
 
 class NCFSOptimizer(object):
