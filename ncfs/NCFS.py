@@ -8,6 +8,7 @@ https://doi.org/10.4304/jcp.7.1.161-168
 Author : Dakota Hawkins
 """
 import warnings
+import sys
 
 import numba
 import numpy as np
@@ -288,8 +289,12 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             raise ValueError('`X` must be two-dimensional numpy array. Got ' + 
                              '{} dimensional.'.format(len(X.shape)))
         if not isinstance(y, np.ndarray):
-            raise ValueError('`y` must be a numpy array. ' + 
-                             'Got {}.'.format(type(y)))
+            if 'pandas' in sys.modules:
+                if isinstance(y, sys.modules['pandas'].Series):
+                    y = y.values
+            else:
+                raise ValueError('`y` must be a numpy array. ' + 
+                                'Got {}.'.format(type(y)))
         if y.shape[0] != X.shape[0]:
             raise ValueError('`X` and `y` must have the same row numbers.')
         if self.max_iter is None:
@@ -312,7 +317,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             if self.coef_.size != self.n_features_:
                 raise ValueError("Expected {} ".format(self.coef_.size) +\
                                  "features on warm start. Got {}.".format(
-                                     self.n_features_))
+                                 self.n_features_))
         # check distance metric
         if self.metric.lower() not in distances.supported_distances:
             raise ValueError("Unsupported distance metric {}".\
