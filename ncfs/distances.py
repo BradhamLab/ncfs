@@ -4,68 +4,68 @@ import numba
 _mock_ones = np.ones(2, dtype=np.float64)
 # implementation/syntax inspired by UMAP.distances
 
-@numba.njit()
+@numba.njit(fastmath=True)
 def manhattan(x, y, w=_mock_ones):
     """Calculate the L1-distance between two vectors."""
     result = 0.0
-    for i in range(x.shape[0]):
+    for i in numba.prange(x.shape[0]):
         result += w[i] * abs(x[i] - y[i])
     return result
 
 
-@numba.njit()
+@numba.njit(fastmath=True)
 def euclidean(x, y, w):
     """Calculate weighted Euclidean distnace between two vectors."""
     result = 0.0
-    for i in range(x.shape[0]):
+    for i in numba.prange(x.shape[0]):
         result += w[i] * (x[i] - y[i]) ** 2
     return np.sqrt(result)
 
 
-@numba.njit()
+@numba.njit(fastmath=True)
 def sqeuclidean(x, y, w=_mock_ones):
     """Calculate the L2-distance between two vectors."""
     result = 0.0
-    for i in range(x.shape[0]):
+    for i in numba.prange(x.shape[0]):
         result += w[i] * (x[i] - y[i]) ** 2
     return result
 
 
-@numba.njit()
+@numba.njit(fastmath=True)
 def covariance(x, y, w=_mock_ones):
     """Calculate sample co-variance between two vectors."""
     result = 0.0
     # calculate average values over vectors
     x_bar = 0.0
     y_bar = 0.0
-    for i in range(x.shape[0]):
+    for i in numba.prange(x.shape[0]):
         x_bar += x[i]
         y_bar += y[i]
     x_bar *= 1.0 / x.shape[0]
     y_bar *= 1.0 / x.shape[0]
     # calculate sum of weighted distance products
-    for i in range(x.shape[0]):
+    for i in numba.prange(x.shape[0]):
         result += w[i] * (x[i] - x_bar) * (y[i] - y_bar)
     # dives by n - 1 for sample covariance
     result *= 1.0 / (x.shape[0] - 1)
     return result
 
 
-@numba.njit()
+@numba.njit(fastmath)
 def variance(x, w=_mock_ones):
     """Calculate sample weighted variance"""
     mean = 0.0
     sum_of_weights = 0.0
     sum_of_squared_weights = 0.0
     result = 0
-    for i in range(x.shape[0]):
+    for i in numba.prange(x.shape[0]):
         mean += x[i] * w[i]
         sum_of_weights += w[i]
         sum_of_squared_weights += w[i] ** 2
     if sum_of_weights == 0:
         return np.nan
     mean = mean / sum_of_weights
-    for i in range(x.shape[0]):
+    for i in numba.prange(x.shape[0]):
         result += w[i] * (x[i] - mean) ** 2
     return result / (sum_of_weights - sum_of_squared_weights / sum_of_weights)
 
