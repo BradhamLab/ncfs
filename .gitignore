@@ -10,3 +10,8 @@ notebooks/*
 __pycache__/*
 docs/*
 */__pycache__/*
+*.out
+build/*
+dist/*
+*egg*
+tmp/*
