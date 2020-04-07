@@ -13,165 +13,13 @@ import sys
 import numba
 import numpy as np
 from scipy import spatial
-from sklearn import base, model_selection
+from sklearn import base, model_selection, exceptions
 
-from . import distances
-from . import accelerated
+from ncfs import distances
+from ncfs import accelerated
 # import distances
-
-class NCFSOptimizer(object):
-    """Gradient ascent/descent optimization following NCFS protocol."""
-
-    def __init__(self, alpha=0.01):
-        """
-        Gradient ascent/descent optimization following NCFS protocol.
-        
-        Parameters
-        ----------
-        alpha : float, optional
-            Initial step size. The default is 0.01.
-
-        Attributes
-        ----------
-        alpha
-
-        Methods
-        -------
-        get_steps(gradients) : get gradient deltas for each feature gradient.
-        """
-        self.alpha = alpha
-
-    def get_steps(self, gradients, loss=None, *args):
-        """
-        Calculate gradient deltas for each feature gradient.
-        
-        Parameters
-        ----------
-        gradients : numpy.ndarray
-            Calculated gradient delta of objective function with respect to
-            given feature.
-        loss : float
-            Difference between objective function at t and t - 1.
-        
-        Returns
-        -------
-        numpy.ndarray
-            Gradient steps for each feature gradient.
-        """
-        steps = self.alpha * gradients
-        if loss is not None:
-            if loss > 0:
-                self.alpha *= 1.01
-            else:
-                self.alpha *= 0.4
-        return steps
-        
-class ExponentialKernel(object):
-    """Base class for kernel functions."""
-
-    def __init__(self, sigma, reg, n_features, metric):
-        """
-        Base class for kernel functions.
-
-        Parameters
-        ----------
-        sigma : float
-            Scaling parameter sigma as mentioned in original paper.
-        reg : float
-            Regularization parameter.
-        n_features : float
-            Number of features.
-        metric: str
-            Distance metric to use between vectors.
-
-        Methods
-        -------
-        transform():
-            Apply the kernel tranformation to a distance matrix.
-
-        gradients():
-            Get current gradients for each feature
-        """
-        self.sigma = sigma
-        self.reg = reg
-        self.metric = metric
-        self.transform_ = accelerated.exponential_transform
-        self._set_distance()
-
-    def _set_distance(self):
-        if isinstance(self.metric, distances.PhiS):
-            warnings.warn("PhiS distance may result in segmentation fault.")
-            self.distance_ = distances.phi_s
-        elif isinstance(self.metric, distances.Manhattan):
-            self.distance_ = distances.manhattan
-        elif isinstance(self.metric, distances.Euclidean):
-            warnings.warn("Euclidean distance may not converge.")
-            self.distance_ = distances.euclidean
-        elif isinstance(self.metric, distances.SqEuclidean):
-            self.distance_ = distances.sqeuclidean
-        else:
-            raise ValueError("Unsupported metric function.")
-
-    def transform(self, distance_matrix):
-        """Apply a kernel transformation to a distance matrix."""
-        return self.transform_(distance_matrix, self.sigma)
-
-    def probability_matrix(self, X):
-        distance_matrix = np.zeros((X.shape[0], X.shape[0]))
-        return accelerated.probability_matrix(X, self.metric.w_,
-                                              distance_matrix,
-                                              self.distance_,
-                                              self.transform_,
-                                              self.sigma)
-
-    def gradients(self, X, class_matrix, sample_weights):
-        r"""
-        Calculate feature gradients of objective function.
-
-        Calculates the gradient vector of the objective function with respect
-        to feature weights. Objective function is the same outlined in the
-        original NCFS paper.
-
-        **Objective Function**:
-
-        .. math::
-            E(\vec w) = \sum \limits_i^N \frac{1}{C_i} \sum \limits_i^N y_{ij} * p_{ij}
-                      - \lambda \sum \limits_l^M w_l^2
-        
-        Parameters
-        ----------
-        p_reference : numpy.ndarray
-            A (sample x sample) probability matrix with :math:`P_{ij}`
-            represents the probability of selecting sample :math:`j` as a
-            reference for sample :math:`i`.
-        partials : numpy.ndarray
-            A (sample x sample x feature) tensor holding partial derivative
-            values, such that
-
-            .. math::
-                A[i, j, l] = \frac{\partial D(x_i, x_j, w)}{\partial w_l}
-
-            Where :math:`D(x_i, x_j, w)` is some distance function with feature
-            weights.
-        weights : numpy.ndarray
-            A feature-length array feature weights.
-        class_matrix : numpy.ndarray
-            A one-hot (sample x sample) matrix where :math:`Y_{ij} = 1`
-            indicates sample :math:`i` and sample :math:`j` are in the same
-            class, and :math:`Y_{ij} = 0` otherwise. It is assumed
-            :math:`Y_{ii} = 0`. 
-        
-        Returns
-        -------
-        numpy.ndarray
-            Gradient vector for each feature with respect to the objective
-            function.
-        """
-        return accelerated.gradients(X, class_matrix, sample_weights,
-                                     self.metric, self.distance_,
-                                     self.transform_, self.sigma, self.reg)
-
-
+# import accelerated
+   
 class NCFS(base.BaseEstimator, base.TransformerMixin):
     """
     Class to perform Neighborhood Component Feature Selection 
@@ -185,7 +33,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
     """
 
     def __init__(self, alpha=0.1, sigma=1, reg=1, eta=0.001,
-                 metric='cityblock', kernel='exponential', solver='ncfs',
+                 metric='cityblock', kernel='exponential',
                  max_iter=1000):
         """
         Class to perform Neighborhood Component Feature Selection 
@@ -255,15 +103,16 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.eta = eta 
         self.metric = metric
         self.kernel = kernel
-        self.solver = solver
         self.max_iter = max_iter
         self.warm_start_ = False
+        # self._debug = True
+        # if debug:
+        #     import logging
+        #     logging.basicConfig(filename='ncfs.log')
 
     @staticmethod
     def __check_X(X):
-        mins = np.min(X, axis=0)
-        maxes = np.max(X, axis=0)
-        if any(mins < 0) or any(maxes > 1):
+        if not np.isclose(X.min(), 0) or not np.isclose(X.max(), 1):
             warnings.warn("Data matrix contains values outside of the [0, 1] "
                           "interval. May be numerical unstable and lead to "
                           "pseudocount additions during fitting.")
@@ -319,25 +168,18 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                                  "features on warm start. Got {}.".format(
                                  self.n_features_))
         # check distance metric
-        if self.metric.lower() not in distances.supported_distances:
-            raise ValueError("Unsupported distance metric {}".\
-                             format(self.metric))
-        # initialize distance metric
-        self.metric_ = distances.partials[self.metric](X, self.coef_)
+        if self.metric not in distances.supported_distances:
+            raise ValueError(f"Unsupported distance metric {self.metric}"\
+                             "Supported metrics are {}".format(distances.metrics.keys()))
+        # initialize distance and gradient functions
+        self.distance_, self.distance_grad_ = distances.metrics[self.metric]
         # intialize kernel function
         if self.kernel == 'exponential':
             X = NCFS.__check_X(X)
-            self.kernel_ = ExponentialKernel(self.sigma, self.reg,
-                                             self.n_features_, self.metric_)
+            self.kernel_ = accelerated.exponential_transform
         else:
             raise ValueError('Unsupported kernel function: {}'\
                              .format(self.kernel))
-        # initialize gradient ascent solver
-        if self.solver == 'ncfs':
-            self.solver_ = NCFSOptimizer(alpha=self.alpha)
-        else:
-            raise ValueError('Unsupported gradient ascent method{}'.\
-                             format(self.solver))
 
     @staticmethod
     def __check_sample_weights(y, sample_weights):
@@ -388,9 +230,6 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         # max_count = counts.max()
         for label, count in zip(labels, counts):
             # calculate w = (n_samples) / (n_classes * |c_i|)
-            # -> can be less than 1, might not be great
-            # optional: scale to set min to 1
-            # different calc (2*max_c - c) / (max_c), w in [1, 2]
             weight = y.size / (n_labels * count)
             sample_weights[np.where(y == label)[0]] = weight
         return sample_weights
@@ -422,6 +261,10 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         return class_matrix
 
     def partial_fit(self, X, y, sample_weights=None):
+        warnings.warn("Calling `partial_fit()` directly will lead "\
+                      "to a performance loss due to continually copying data "\
+                      "between Pythong and Numba jit-compiled C++ code. Calling "\
+                      "`fit()` is recommended if possible.")
         if sample_weights == 'balanced':
             raise ValueError("Balanced sample weights is unsupported during "
                              "partial fit. If balanced weights are desired, "
@@ -431,7 +274,18 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.__check_params(X, y)
         class_matrix = NCFS.calculate_class_matrix(y)
         sample_weights = NCFS.__check_sample_weights(y, sample_weights)
-        self.__partial_fit(X, class_matrix, sample_weights)
+        # this should be a jitted function
+        distance_matrix = np.zeros_like(class_matrix)
+        partials_vec = np.zeros_like(self.coef_)
+        self.score_ = accelerated.partial_fit(X, class_matrix, sample_weights,
+                                              self.coef_,
+                                              self.distance_,
+                                              self.distance_grad_,
+                                              self.kernel_,
+                                              self.sigma, self.reg, self.alpha,
+                                              distance_matrix, partials_vec,
+                                              self.score_)
+        
         return self
 
     def fit(self, X, y, sample_weights=None):
@@ -459,15 +313,23 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.__check_params(X, y)
         class_matrix = NCFS.calculate_class_matrix(y)
         sample_weights = NCFS.__check_sample_weights(y, sample_weights)
-        loss, i = np.inf, 0
-        # iterate until convergence
-        while abs(loss) > self.eta and i < self.max_iter:
-            loss = self.__partial_fit(X, class_matrix, sample_weights)
-            i += 1
+        distance_matrix = np.zeros_like(class_matrix)
+        partial_vec = np.zeros_like(self.coef_)
+        self.score_, i = accelerated.fit(X, class_matrix, sample_weights,
+                                         self.coef_,
+                                         self.distance_, self.distance_grad_,
+                                         self.kernel_,
+                                         self.sigma, self.reg,
+                                         self.alpha, self.eta,
+                                         self.max_iter,
+                                         distance_matrix, partial_vec)
         if i >= self.max_iter:
             warnings.warn("Number of max iterations reached before convergence."
                           "Fit may be poor. Consider increasing the number of "
                           "max number of iterations.")
+        if any([np.isnan(x) for x in self.coef_]):
+            raise exceptions.FitFailedWarning("NaN values in coefficients. "\
+                                              "Fit failed. Try scaling data.")
         return self
 
     def transform(self, X):
@@ -509,44 +371,6 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         # do not square weights when transforming -- break expected behavior
         return X * self.coef_
 
-    def __partial_fit(self, X, class_matrix, sample_weights):
-        """
-        Underlying method to fit NCFS model.
-        
-        Parameters
-        ----------
-        X : numpy.ndarray
-            A sample by feature data matrix.
-        class_matrix : numpy.ndarray
-            A sample by sample one-hot matrix marking samples in the same class.
-        score : float
-            Objective score reached from past iteration
-        
-        Returns
-        -------
-        float
-            Objective reached by current iteration.
-        """
-        # caclulate weight adjustments
-        p_reference, gradients = self.kernel_.gradients(X, class_matrix,
-                                            sample_weights)        
-        # calculate objective function
-        new_score = self.objective(p_reference, class_matrix, sample_weights)
-        # calculate loss from previous objective function
-        loss = new_score - self.score_
-        # update weights
-        deltas = self.solver_.get_steps(gradients, loss)
-        self.coef_ = self.coef_ + deltas
-        # return objective score for new iteration
-        self.metric_.update_values(X, self.coef_)
-        self.score_ = new_score
-        return loss
-
-    def objective(self, p_reference, class_matrix, sample_weights):
-        score = np.sum((p_reference * class_matrix).T * sample_weights) \
-                      - self.reg * np.dot(self.coef_, self.coef_)
-        return score
-
     def score(self, X, y, sample_weights=None):
         """
         Score the current fit of an NCFS object.
@@ -572,9 +396,20 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         self.__check_params(X, y)
         sample_weights = self.__check_sample_weights(y, sample_weights)
         class_matrix = self.calculate_class_matrix(y)
-        p_reference = self.kernel_.probability_matrix(X)
-        return self.objective(p_reference, class_matrix, sample_weights)
+        distance_matrix = np.zeros_like(class_matrix)
+        return accelerated.score(X, class_matrix, sample_weights, self.coef_,
+                                 distance_matrix, self.distance_,
+                                 self.kernel_,
+                                 self.sigma, self.reg)
 
+def log_system_info():
+    import os
+    import logging
+    import psutil
+    pid = os.getpid()
+    py = psutil.Process(pid)
+    memory_use = py.memory_info().rss / 2 ** 30 
+    logging.info("Memory usage during NCFS: {:0.03} GB".format(memory_use))
 
 def toy_dataset(n_features=1000, n1=100, n2=100):
     """
@@ -636,12 +471,11 @@ def toy_dataset(n_features=1000, n1=100, n2=100):
 
 def main():
     X, y = toy_dataset(n_features=1000, n1=150, n2=50)
-    f_select = NCFS(alpha=0.001, sigma=1, reg=1, eta=0.001,
+    f_select = NCFS(alpha=0.01, sigma=1, reg=1, eta=0.001,
                     metric='manhattan',
-                    kernel='exponential',
-                    solver='ncfs')
+                    kernel='exponential')
     from timeit import default_timer as timer
-    times = np.zeros(1)
+    times = np.zeros(10)
     # previous 181.82286000379972
     # not parallel: 116
     # parallel, jobs=1 = 124
@@ -649,6 +483,7 @@ def main():
     # vectorized 104
     # NUMBA -- 80s w/ manhattan, euclidean doesnt' converge, sq does -- 80s
     # NUMBA -- 40S w/ manhattan + accelerated gradients
+    # NUMBA -- 4.5s w/ manhattan + for loops
     for i in range(times.size):            
         start = timer()
         f_select.fit(X, y, sample_weights='balanced')

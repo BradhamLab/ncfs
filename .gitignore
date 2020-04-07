@@ -8,3 +8,5 @@ data/*
 notebooks/*
 .vscode/*
 __pycache__/*
+docs/*
+*/__pycache__/*

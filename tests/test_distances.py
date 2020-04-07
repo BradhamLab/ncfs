@@ -1,5 +1,5 @@
 import numpy as np
-from ncfs_expanded import distances
+from ncfs import distances
 import unittest
 
 class ManhattanTest(unittest.TestCase):
@@ -57,6 +57,25 @@ class ManhattanTest(unittest.TestCase):
         D = np.zeros((3, 3))
         partial.partials(self.X, D, 2)
         np.testing.assert_allclose(expected, D)
+
+    def test_pdist_init(self):
+        dist = np.zeros((3, 3))
+        distances.pdist(self.X, self.w_, dist, distances.manhattan,
+                        symmetric=False)
+        dist2 = np.ones((3, 3))
+        np.fill_diagonal(dist2, 0.0)
+        distances.pdist(self.X, self.w_, dist2, distances.manhattan,
+                        symmetric=False)
+        np.testing.assert_equal(dist, dist2)
+
+    def test_pdist_twice(self):
+        dist = np.zeros((3, 3))
+        distances.pdist(self.X, self.w_, dist, distances.manhattan,
+                        symmetric=False)
+        first_dist = dist.copy()
+        distances.pdist(self.X, self.w_, dist, distances.manhattan,
+                        symmetric=False)
+        np.testing.assert_equal(first_dist, dist)
 
 
 class SqeuclideanTest(unittest.TestCase):
