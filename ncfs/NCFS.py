@@ -137,6 +137,8 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         if len(X.shape) != 2:
             raise ValueError('`X` must be two-dimensional numpy array. Got ' + 
                              '{} dimensional.'.format(len(X.shape)))
+        if isinstance(y, list):
+            y = np.array(y)
         if not isinstance(y, np.ndarray):
             if 'pandas' in sys.modules:
                 if isinstance(y, sys.modules['pandas'].Series):
@@ -483,7 +485,7 @@ def main():
     # vectorized 104
     # NUMBA -- 80s w/ manhattan, euclidean doesnt' converge, sq does -- 80s
     # NUMBA -- 40S w/ manhattan + accelerated gradients
-    # NUMBA -- 4.5s w/ manhattan + for loops
+    # NUMBA -- 703 ms w/ manhattan + for loops
     for i in range(times.size):            
         start = timer()
         f_select.fit(X, y, sample_weights='balanced')
