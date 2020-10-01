@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='ncfs',
-      version='0.1',
+      version='0.1.0',
       description="Identify distinguishing features between classes using neighborhood feature selection.",
       url='https://github.com/dakota-hawkins/icat',
       author='Dakota Y. Hawkins',
