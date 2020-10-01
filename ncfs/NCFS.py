@@ -182,6 +182,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
         else:
             raise ValueError('Unsupported kernel function: {}'\
                              .format(self.kernel))
+        return (X, y)
 
     @staticmethod
     def __check_sample_weights(y, sample_weights):
@@ -273,7 +274,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
                              "call `NCFS.calculate_sample_weights()` on "
                              "either a representative sample or the complete "
                              "set of labels for the given dataset.")
-        self.__check_params(X, y)
+        X, y = self.__check_params(X, y)
         class_matrix = NCFS.calculate_class_matrix(y)
         sample_weights = NCFS.__check_sample_weights(y, sample_weights)
         # this should be a jitted function
@@ -312,7 +313,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             Fitted NCFS object with weights stored in the `.coef_` instance
             variable.
         """
-        self.__check_params(X, y)
+        X, y = self.__check_params(X, y)
         class_matrix = NCFS.calculate_class_matrix(y)
         sample_weights = NCFS.__check_sample_weights(y, sample_weights)
         distance_matrix = np.zeros_like(class_matrix)
@@ -395,7 +396,7 @@ class NCFS(base.BaseEstimator, base.TransformerMixin):
             validation.
         """
         self.__check_X(X)
-        self.__check_params(X, y)
+        X, y = self.__check_params(X, y)
         sample_weights = self.__check_sample_weights(y, sample_weights)
         class_matrix = self.calculate_class_matrix(y)
         distance_matrix = np.zeros_like(class_matrix)
