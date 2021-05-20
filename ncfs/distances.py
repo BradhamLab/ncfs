@@ -92,7 +92,11 @@ def phi_s(x, y, w=_mock_ones):
     """Calculate the phi_s proportionality metric between two vectors."""
     if np.all(x == y):
         return 0.0
-    return variance(x - y, w) / variance(x + y, w)
+    nume = variance(x - y, w)
+    denom = variance(x + y, w)
+    if denom == 0:
+        return np.inf
+    return nume / denom
 
 
 @numba.njit()
@@ -257,114 +261,6 @@ def fit_phi_s(X, w, means, ss):
                 ss[1, i, j] += res
                 ss[1, j, i] += res
     return sum_of_weights
-
-# specification of 
-phi_s_spec = [('v1_', numba.float64),
-              ('means_', numba.float64[:, :, :]),
-              ('ss_', numba.float64[:, :, :]),
-              ('w_', numba.float64[:]),
-              ('symmetric', numba.boolean)]
-@numba.jitclass(phi_s_spec)
-class PhiS(object):
-    r"""
-    Calculate partial derivatives for Symmetric Phi with squared weights.
-    
-    .. math::
-
-        \phi_s(X, Y) = \frac{\Var(X - Y)}{\Var(X + Y)} \\
-    """
-
-    def __init__(self, X, w):
-        r"""
-        Class for quick calculuations of
-        :math:`\frac{\partial \phi_s}{\partial w_l}`.
-        
-        Parameters
-        ----------
-        X : numpy.ndarray
-            A (sample x feature) data matrix.
-        w : numpy.ndarray
-            A feature-length vector 
-        """
-        self.means_ = np.zeros((2, X.shape[0], X.shape[0]))
-        self.ss_ = np.zeros_like(self.means_)
-        self.v1_ = 0.0
-        print("Fitting PhiS distances")
-        self.update_values(X, w)
-        self.symmetric = False
-    
-    def distance(self, x, y, w):
-        return phi_s(x, y, w)
-    
-    def update_values(self, X, w):
-        """
-        Update calculated means, sum of squared means, and total feature weight.
-        
-        Parameters
-        ----------
-        X : numpy.ndarray
-            A (sample x feature) data matrix
-        w : numpy.ndarray
-            a (feature) length vector of feature weights. 
-        """
-        self.w_ = w
-        self.means_ *= 0
-        self.ss_ *= 0
-        self.v1_ = fit_phi_s(X, self.w_ ** 2, self.means_, self.ss_)       
-
-    def sample_feature_partial(self, X, i, j, l):
-        """
-        Calculate `d Phi(x_i, X_j) / d w_l`.
-
-        Parameters
-        ----------
-        X : numpy.ndarray
-            A (sample x feautre) data matrix.
-        i : int
-            The ith sample in `X`.
-        j : int
-            The jth sample in `X`.
-        l : int
-            The lth feature in `X`.
-        
-        Returns
-        -------
-        float
-            Partial derivative of `Phi_s(x, y)` for feature `l`. 
-        """
-        x = X[i, l] - X[j, l]
-        y = X[i, l] + X[j, l]
-        dSxx = 2 * self.w_[l] * (x - self.means_[0, i, j])\
-             * (2 * self.w_[l] * ((x - self.means_[0, i, j])**2) / self.v1_ + 1)
-        dSyy = 2 * self.w_[l] * (y - self.means_[1, i, j])\
-             * (2 * self.w_[l] * ((y - self.means_[1, i, j])**2) / self.v1_ + 1)
-        return ((self.ss_[1, i, j] * dSxx - self.ss_[0, i, j] * dSyy) / (self.ss_[1, i, j] ** 2))
-
-    def partials(self, X, D, l):
-        """
-        Caculate `d Phi(x_i, x_j) / d w_l` for all samples `i` and `j`. 
-        
-        Parameters
-        ----------
-        X : numpy.ndarray
-            A (sample x feature) data matrix.
-        D : numpy.ndarray
-            A (sample x sample) matrix for storing derivatives.
-        l : int
-            The `lth` feature in `X`. 
-        
-        Returns
-        -------
-        numpy.ndarray
-            Matrix of partial derivative of `Phi_s(x, y)` for feature `l` over
-            all samples `x` and `y`. 
-        """
-        for i in numba.prange(X.shape[0]):
-            for j in numba.prange(i, X.shape[0]):
-                D[i, j] = self.sample_feature_partial(X, i, j, l)
-                D[j, l] = self.sample_feature_partial(X, j, i, l)
-        return D
-
 
 supported_distances = {'l1': manhattan,
                        'cityblock': manhattan,
