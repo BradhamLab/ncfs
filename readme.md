@@ -7,9 +7,9 @@ maximizing prediction accuracy in a leave-one-out KNN classifier.
 
 ## Installation
 
-The package is not currently available on `pip` or `conda`, so cloning/forking
-the repository is the best way to install the package. The package relies on
-`numpy` and `scipy`. 
+The package can be with pip using the following command:
+
+`pip install ncfs`
 
 ## Example
 
@@ -32,7 +32,7 @@ original paper are listed below. To generate plots yourself, run
 
 ### Distance metric
 
-The original paper uses the Manhattan distance `(1)` when calculating distances
+The original paper uses the Manhattan distance when calculating distances
 between samples/features. While this implementation defaults to using this
 distance, weights comparable with published results were only found using the
 euclidean distance. However, while exact weights differed between distance
@@ -43,30 +43,10 @@ implementation of the aglorithm.
 ### Numerical stability
 ![Formulas](/images/distance.png)
 
-NCFS uses the kernal function `(2)` when calculating probabilities. However, with
-a large number of features, the value `z` -- canonically a distance value from
-`(1)` -- can easily approach a large enough value such that the negative
-exponent rounds to zero. This leads to division by zero issues, and fitting
-fails. To get around this, small pseudocounts are added to distances when a
-division by zero would otherwise occur. To keep distances small, features should
-be scaled between 0 and 1 (enforced by NCFS), and again, use of the euclidean
-distance is recommended.
+NCFS uses the original kernel function when calculating probabilities; however, with
+a large number of features, distance values can easily approach a large enough
+value such that the negative exponent rounds to zero. This leads to division by
+zero issues, and fitting fails. To get around this, small pseudocounts are added
+to distances when a division by zero would otherwise occur. To keep distances
+small, features should be scaled between 0 and 1 (enforced by NCFS).
 
-### Selected Features
-Figure 1, Yang et al. 2012
-![Figure1](/images/Figure1.png)
-
-Figure 1 Comparison
-![Comparison1](/images/figure1_comp.png)
-
-Figure 2, Yang et al. 2012
-![Figure2](/images/Figure2.png)
-
-Figure 2 Comparison
-![Comparison2](/images/figure2_comp.png)
-
-Figure 3, Yang et al. 2012
-![Figure3](/images/Figure3.png)
-
-Figure 3 Comparison
-![Comparison3](/images/figure3_comp.png)
