@@ -1,12 +1,11 @@
 from setuptools import setup
 
 with open("readme.md", "r") as f:
-    print(os.getcwd())
     long_description = f.read()
 
 setup(
     name="ncfs",
-    version="0.1.0",
+    version="0.1.1",
     description="Python implementation of Neighborhood Component Feature Selection (NCFS)",
     long_description=long_description,
     long_description_content_type="text/markdown",
