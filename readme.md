@@ -41,7 +41,6 @@ did not link to the code used, and I've been unable to find a public
 implementation of the aglorithm.
 
 ### Numerical stability
-![Formulas](/images/distance.png)
 
 NCFS uses the original kernel function when calculating probabilities; however, with
 a large number of features, distance values can easily approach a large enough
