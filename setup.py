@@ -1,11 +1,20 @@
 from setuptools import setup
 
-setup(name='ncfs',
-      version='0.1.0',
-      description="Identify distinguishing features between classes using neighborhood feature selection.",
-      url='https://github.com/dakota-hawkins/icat',
-      author='Dakota Y. Hawkins',
-      author_email='dyh0110@bu.edu',
-      license='BSD',
-      packages=['ncfs'],
-      zip_safe=False)
+with open("readme.md", "r") as f:
+    print(os.getcwd())
+    long_description = f.read()
+
+setup(
+    name="ncfs",
+    version="0.1.0",
+    description="Python implementation of Neighborhood Component Feature Selection (NCFS)",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/BradhamLab/icat",
+    author="Dakota Y. Hawkins",
+    author_email="dyh0110@bu.edu",
+    license="BSD",
+    packages=["ncfs"],
+    install_requires=["numpy", "scipy", "numba", "scikit-learn"],
+    classifiers=["Programming Language :: Python :: 3"],
+)
