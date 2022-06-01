@@ -9,7 +9,7 @@ setup(
     description="Python implementation of Neighborhood Component Feature Selection (NCFS)",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/BradhamLab/icat",
+    url="https://github.com/BradhamLab/ncfs",
     author="Dakota Y. Hawkins",
     author_email="dyh0110@bu.edu",
     license="BSD",
