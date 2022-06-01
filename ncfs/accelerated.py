@@ -5,6 +5,7 @@ from ncfs import distances
 
 # TODO not sure we're calculating w_l ** 2 * dist(x, y)
 
+
 @numba.njit(parallel=True, fastmath=True)
 def exponential_transform(D, sigma):
     """Transform distances to kernel distances."""
@@ -18,7 +19,7 @@ def probability_matrix(X, w, D, distance, transform, sigma):
 
     Calculates the matrix `P`. Element `p_ij` is the probability of sample `j`
     being the reference point during 1-NN classification step
-    
+
     Parameters
     ----------
     X : numpy.ndarray
@@ -34,11 +35,11 @@ def probability_matrix(X, w, D, distance, transform, sigma):
     transform : Numba.njit
         A Numba.njit() compiled function that transforms the distance matrix
         into a kernel space.
-    
+
     Returns
     -------
     numpy.ndarray
-        The matrix `P`. 
+        The matrix `P`.
     """
     # calculate D_w(x_i, x_j): sum(w_l^2 * |x_il - x_jl], l) for all i,j
     distances.pdist(X, w ** 2, D, distance, True)
@@ -61,8 +62,18 @@ def probability_matrix(X, w, D, distance, transform, sigma):
 
 
 @numba.njit(parallel=True, fastmath=True)
-def feature_gradient(X, class_matrix, coefs, sample_weights, p_reference,
-                     p_correct, l, distance_grad, sigma, reg):
+def feature_gradient(
+    X,
+    class_matrix,
+    coefs,
+    sample_weights,
+    p_reference,
+    p_correct,
+    l,
+    distance_grad,
+    sigma,
+    reg,
+):
     value = 0.0
     for i in numba.prange(p_reference.shape[0]):
         all_term = 0.0
@@ -73,8 +84,8 @@ def feature_gradient(X, class_matrix, coefs, sample_weights, p_reference,
             all_term += partial * p_reference[i, j]
             in_class_term += partial * p_reference[i, j] * class_matrix[i, j]
         value += sample_weights[i] * (all_term * p_correct[i] - in_class_term)
-        
-    # calculate delta following gradient ascent 
+
+    # calculate delta following gradient ascent
     return 1.0 / sigma * value - 2 * coefs[l] * reg
 
 
@@ -94,10 +105,20 @@ def objective(p_reference, class_matrix, sample_weights, coef, reg):
 
 
 @numba.njit(parallel=True, fastmath=True)
-def score(X, class_matrix, sample_weights, coefs, distance_matrix,
-          distance, transform, sigma, reg):
-    p_reference = probability_matrix(X, coefs, distance_matrix, distance,
-                                     transform, sigma)
+def score(
+    X,
+    class_matrix,
+    sample_weights,
+    coefs,
+    distance_matrix,
+    distance,
+    transform,
+    sigma,
+    reg,
+):
+    p_reference = probability_matrix(
+        X, coefs, distance_matrix, distance, transform, sigma
+    )
     return objective(p_reference, class_matrix, sample_weights, coefs, reg)
 
 
@@ -112,23 +133,42 @@ def ncfs_update_weights(coefs, feature_gradients, alpha, loss):
 
 
 @numba.njit(parallel=True, fastmath=True)
-def partial_fit(X, class_matrix, sample_weights, coefs,
-                distance, distance_grad, transform,
-                sigma, reg, alpha,
-                distance_matrix, partials_vec,
-                score):
+def partial_fit(
+    X,
+    class_matrix,
+    sample_weights,
+    coefs,
+    distance,
+    distance_grad,
+    transform,
+    sigma,
+    reg,
+    alpha,
+    distance_matrix,
+    partials_vec,
+    score,
+):
     # Matrix P, where P_ij is the probability of j referencing i
-    p_reference = probability_matrix(X, coefs, distance_matrix, distance,
-                                     transform, sigma)
+    p_reference = probability_matrix(
+        X, coefs, distance_matrix, distance, transform, sigma
+    )
     # a sample length vector -- probability of correctly assigning sample i
     p_correct = (p_reference * class_matrix).sum(axis=1)
     for l in numba.prange(X.shape[1]):
         # (sample x sample) matrix to store gradients where element
-        # (i, j) is the gradient for w_l between samples i and 
-        partials_vec[l] = feature_gradient(X, class_matrix, coefs, sample_weights,
-                                           p_reference, p_correct, l,
-                                           distance_grad,
-                                           sigma, reg)
+        # (i, j) is the gradient for w_l between samples i and
+        partials_vec[l] = feature_gradient(
+            X,
+            class_matrix,
+            coefs,
+            sample_weights,
+            p_reference,
+            p_correct,
+            l,
+            distance_grad,
+            sigma,
+            reg,
+        )
     new_score = objective(p_reference, class_matrix, sample_weights, coefs, reg)
     loss = new_score - score
     ncfs_update_weights(coefs, partials_vec, alpha, loss)
@@ -136,22 +176,42 @@ def partial_fit(X, class_matrix, sample_weights, coefs,
 
 
 @numba.njit(cache=True)
-def fit(X, class_matrix, sample_weights, coefs,
-        distance, distance_grad, transform,
-        sigma, reg, alpha, eta, max_iter,
-        distance_matrix, partials_vec):
+def fit(
+    X,
+    class_matrix,
+    sample_weights,
+    coefs,
+    distance,
+    distance_grad,
+    transform,
+    sigma,
+    reg,
+    alpha,
+    eta,
+    max_iter,
+    distance_matrix,
+    partials_vec,
+):
     loss = np.inf
     i = 0
     score = 0
     while abs(loss) > eta and i < max_iter:
-        new_score = partial_fit(X, class_matrix, sample_weights, coefs,
-                                distance, distance_grad, transform,
-                                sigma, reg, alpha,
-                                distance_matrix, partials_vec,
-                                score)
+        new_score = partial_fit(
+            X,
+            class_matrix,
+            sample_weights,
+            coefs,
+            distance,
+            distance_grad,
+            transform,
+            sigma,
+            reg,
+            alpha,
+            distance_matrix,
+            partials_vec,
+            score,
+        )
         loss = score - new_score
         score = new_score
         i += 1
     return (score, i)
-
-    

@@ -4,6 +4,7 @@ import numba
 _mock_ones = np.ones(2, dtype=np.float64)
 # implementation/syntax inspired by UMAP.distances
 
+
 @numba.njit(fastmath=True)
 def manhattan(x, y, w=_mock_ones):
     """Calculate the L1-distance between two vectors."""
@@ -42,6 +43,7 @@ def sqeuclidean(x, y, w=_mock_ones):
     for i in numba.prange(x.shape[0]):
         result += w[i] * (x[i] - y[i]) ** 2
     return result
+
 
 @numba.njit(fastmath=True)
 def sqeuclidean_grad(X, i, j, l, w=_mock_ones):
@@ -86,6 +88,7 @@ def variance(x, w=_mock_ones):
         result += w[i] * (x[i] - mean) ** 2
     return result / (sum_of_weights - sum_of_squared_weights / sum_of_weights)
 
+
 # should we 1 - this?
 @numba.njit()
 def phi_s(x, y, w=_mock_ones):
@@ -107,17 +110,20 @@ def rho_p(x, y, w=_mock_ones):
     return 1.0 - variance(x - y, w) / (variance(x, w) + variance(y, w))
 
 
-supported_distances = {'l1': manhattan,
-                       'cityblock': manhattan,
-                       'taxicab': manhattan,
-                       'manhattan': manhattan,
-                       'l2': sqeuclidean,
-                       'sqeuclidean': sqeuclidean,
-                       'phi_s': phi_s,
-                       'rho_p': rho_p}
+supported_distances = {
+    "l1": manhattan,
+    "cityblock": manhattan,
+    "taxicab": manhattan,
+    "manhattan": manhattan,
+    "l2": sqeuclidean,
+    "sqeuclidean": sqeuclidean,
+    "phi_s": phi_s,
+    "rho_p": rho_p,
+}
+
 
 @numba.njit(parallel=True)
-def pdist(X, w, dist, func, symmetric = True):
+def pdist(X, w, dist, func, symmetric=True):
     """
     Find the pairwise distances between all rows in a data matrix.
 
@@ -148,38 +154,39 @@ def pdist(X, w, dist, func, symmetric = True):
                 sym_res = func(v, u, w)
             dist[j, i] = sym_res
 
+
 # TODO: Might need to transpose matrix
 def log_ratio(X, ref=None):
     r"""
     Calculate the log-ratio matrix of a data matrix.
-    
+
     Parameters
     ----------
     X : numpy.ndarray
-        A (samples x features) data matrix. 
+        A (samples x features) data matrix.
     ref : int, numpy.ndarray, optional
         Reference value for log-ratio calcuation. By default None, and the
         centered-log ratio transformation is used. Whereby
 
         .. math::
             clr(X_{ij}) = \log(\frac{X_ij} / G(X_i))
-        
+
         and
 
         .. math::
            g(X_i) = \left ( \prod \limits_{j=1}^{M} X_{ij} \right ) ^ {(1/M)}
-        
-        If `ref` is an integer, it is assumed to be a column index in `X`, and 
+
+        If `ref` is an integer, it is assumed to be a column index in `X`, and
 
         .. math::
             g(X_i) = X_{:, ref}
-        
+
         Otherwise, if `ref` is a numpy array of feature length:
 
         .. math::
             g(X_i) = `ref`
-        
-        
+
+
     Returns
     -------
     numpy.ndarray
@@ -193,24 +200,25 @@ def log_ratio(X, ref=None):
         ref = np.mean(log_X, axis=1)
     elif isinstance(ref, int):
         if not 0 < ref < X.shape[1]:
-            raise ValueError("Reference index should be between 0 and "
-                             "{}".format(X.shape[1]))
+            raise ValueError(
+                "Reference index should be between 0 and " "{}".format(X.shape[1])
+            )
         ref = log_X[:, ref]
     elif isinstance(ref, np.ndarray):
         if ref.size != X.shape[1]:
-            raise ValueError("Expected reference array of size "
-                             "{}".format(X.shape[1]))
+            raise ValueError(
+                "Expected reference array of size " "{}".format(X.shape[1])
+            )
     else:
-        raise ValueError("Unexpected input type for `ref`: {}".format(
-                         type(ref)))
-    return log_X - (np.ones_like(X).T * ref).T 
-    
+        raise ValueError("Unexpected input type for `ref`: {}".format(type(ref)))
+    return log_X - (np.ones_like(X).T * ref).T
+
 
 @numba.njit(parallel=True)
 def fit_phi_s(X, w, means, ss):
     """
     Fit means, sum of squared erros, and sum of weights for PhiS derivatives.
-    
+
     Parameters
     ----------
     X : numpy.ndarray
@@ -227,7 +235,7 @@ def fit_phi_s(X, w, means, ss):
         represent the weighted sum of squared values between
         `X[i, :] - x[j, :]` and `X[i, :] + X[j, :]`, respectively. Should be
         initialized to a zero tensor before fitting.
-    
+
     Returns
     -------
     float
@@ -247,35 +255,40 @@ def fit_phi_s(X, w, means, ss):
                 res = w[l] * (X[i, l] + X[j, l])
                 means[1, i, j] += res
                 means[1, j, i] += res
-    
+
             means[:, i, j] /= sum_of_weights
             means[:, j, i] /= sum_of_weights
     for i in numba.prange(X.shape[0]):
         for j in numba.prange(i, X.shape[0]):
             for l in numba.prange(X.shape[1]):
                 # calculate x - y sum of squares
-                ss[0, i, j] += w[l] * ((X[i, l] - X[j, l]) - means[0, i, l])**2
-                ss[0, j, i] += w[l] * ((X[j, l] - X[i, l]) - means[0, j, l])**2
+                ss[0, i, j] += w[l] * ((X[i, l] - X[j, l]) - means[0, i, l]) ** 2
+                ss[0, j, i] += w[l] * ((X[j, l] - X[i, l]) - means[0, j, l]) ** 2
                 # calculate x + y sum of squares, addition is communicative
-                res = w[l] * ((X[i, l] + X[j, l]) - means[1, i, l])**2
+                res = w[l] * ((X[i, l] + X[j, l]) - means[1, i, l]) ** 2
                 ss[1, i, j] += res
                 ss[1, j, i] += res
     return sum_of_weights
 
-supported_distances = {'l1': manhattan,
-                       'cityblock': manhattan,
-                       'taxicab': manhattan,
-                       'manhattan': manhattan,
-                       'l2': euclidean,
-                       'euclidean': euclidean,
-                       'sqeuclidean': sqeuclidean,
-                       'phi_s': phi_s}
 
-metrics = {'manhattan': (manhattan, manhattan_grad),
-           'cityblock': (manhattan, manhattan_grad),
-           'taxicab': (manhattan, manhattan_grad),
-           'l1': (manhattan, manhattan_grad),
-           'l2': (euclidean, euclidean_grad),
-           'euclidean': (euclidean, euclidean_grad),
-           'sqeuclidean': (sqeuclidean, sqeuclidean_grad)}
-        #    'phi_s': (phi_s, phi_s_grad)}
+supported_distances = {
+    "l1": manhattan,
+    "cityblock": manhattan,
+    "taxicab": manhattan,
+    "manhattan": manhattan,
+    "l2": euclidean,
+    "euclidean": euclidean,
+    "sqeuclidean": sqeuclidean,
+    "phi_s": phi_s,
+}
+
+metrics = {
+    "manhattan": (manhattan, manhattan_grad),
+    "cityblock": (manhattan, manhattan_grad),
+    "taxicab": (manhattan, manhattan_grad),
+    "l1": (manhattan, manhattan_grad),
+    "l2": (euclidean, euclidean_grad),
+    "euclidean": (euclidean, euclidean_grad),
+    "sqeuclidean": (sqeuclidean, sqeuclidean_grad),
+}
+#    'phi_s': (phi_s, phi_s_grad)}
