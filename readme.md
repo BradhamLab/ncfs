@@ -24,9 +24,12 @@ print(sum(feature_select.coef_ > 1))
 
 ## Tests
 
-Unit tests are currently under development, but results comparing to the
-original paper are listed below. To generate plots yourself, run
-`python tests/generate_results.py`
+Unit tests for distances can be run with the following command:
+
+```bash tests/test_distances.py```
+
+Results comparing to the original publication are shown below.
+To generate plots yourself, run `python tests/generate_results.py`
 
 ## Comparison with Original Results
 
