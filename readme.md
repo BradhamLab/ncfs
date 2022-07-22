@@ -26,12 +26,19 @@ print(sum(feature_select.coef_ > 1))
 
 Unit tests for distances can be run with the following command:
 
-```bash tests/test_distances.py```
+`tests/test_distances.py`
 
-Results comparing to the original publication are shown below.
-To generate plots yourself, run `python tests/generate_results.py`
+To generate plots comparing results from the original publicaation, run:
 
-## Comparison with Original Results
+`python tests/generate_results.py`
+
+## Integration with Scikit-Learn
+
+The main `NCFS` class extends base `Estimator` and `Transformer` classes from
+`scikit-learn`, and thus can take advantage of the supporting functions in the
+`scikit-learn` library.
+
+## Comparison with Original Paper
 
 ### Distance metric
 
