@@ -24,26 +24,25 @@ def plot_features(w, ax=None, title=""):
 
 
 n_features = [100, 500, 1000, 5000]
-fig, axes = plt.subplots(2, 4, figsize=(12, 8))
+fig, axes = plt.subplots(1, 4, figsize=(12, 6))
 # Calculate feature weights using manhattan + euclidean distances
 for i, n in enumerate(n_features):
     X, y = ncfs.toy_dataset(n)
-    feature_select = ncfs.NCFS(eta=0.01)
+    feature_select = ncfs.NCFS(eta=0.01, metric="manhattan")
     feature_select.fit(X, y)
-    axes[0, i] = plot_features(
+    axes[i] = plot_features(
         feature_select.coef_,
-        ax=axes[0, i],
+        ax=axes[i],
         title="Manhattan distance, N = {}".format(n),
     )
-    feature_select = ncfs.NCFS(eta=0.01)
-    feature_select.fit(X, y, metric="euclidean")
-    axes[1, i] = plot_features(
-        feature_select.coef_,
-        ax=axes[1, i],
-        title="Euclidean distance, N = {}".format(n),
-    )
 
-fig.savefig(os.path.join("../", "images", "figure1_comp.png"))
+figdir = os.path.join(
+    os.path.basename(__file__),
+    "../docs/images"
+)
+if not os.path.exists(figdir):
+    os.makedirs(figdir)
+fig.savefig(os.path.join(figdir, "figure1_comp.png"))
 plt.clf()
 
 lambdas = [0.25, 0.5, 1, 1.5, 2]
@@ -56,7 +55,7 @@ for i, reg in enumerate(lambdas):
         feature_select.coef_, ax=axes[i], title="$\lambda = {}$".format(reg)
     )
 
-fig.savefig(os.path.join("../", "images", "figure2_comp.png"))
+fig.savefig(os.path.join(figdir, "figure2_comp.png"))
 plt.clf()
 
 
@@ -69,5 +68,5 @@ for i, sigma in enumerate(sigmas):
         feature_select.coef_, ax=axes[i], title="$\sigma = {}$".format(sigma)
     )
 
-fig.savefig(os.path.join("../", "images", "figure3_comp.png"))
+fig.savefig(os.path.join(figdir, "figure3_comp.png"))
 plt.clf()
