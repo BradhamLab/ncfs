@@ -10,7 +10,7 @@ import os
 import numpy as np
 from matplotlib import pyplot as plt
 
-from NCFS import NCFS
+import ncfs
 
 
 def plot_features(w, ax=None, title=""):
@@ -27,15 +27,15 @@ n_features = [100, 500, 1000, 5000]
 fig, axes = plt.subplots(2, 4, figsize=(12, 8))
 # Calculate feature weights using manhattan + euclidean distances
 for i, n in enumerate(n_features):
-    X, y = NCFS.toy_dataset(n)
-    feature_select = NCFS.NCFS(eta=0.01)
+    X, y = ncfs.toy_dataset(n)
+    feature_select = ncfs.NCFS(eta=0.01)
     feature_select.fit(X, y)
     axes[0, i] = plot_features(
         feature_select.coef_,
         ax=axes[0, i],
         title="Manhattan distance, N = {}".format(n),
     )
-    feature_select = NCFS.NCFS(eta=0.01)
+    feature_select = ncfs.NCFS(eta=0.01)
     feature_select.fit(X, y, metric="euclidean")
     axes[1, i] = plot_features(
         feature_select.coef_,
@@ -48,9 +48,9 @@ plt.clf()
 
 lambdas = [0.25, 0.5, 1, 1.5, 2]
 fig, axes = plt.subplots(1, 5, figsize=(12, 4))
-X, y = NCFS.toy_dataset(1000)
+X, y = ncfs.toy_dataset(1000)
 for i, reg in enumerate(lambdas):
-    feature_select = NCFS.NCFS(reg=reg, eta=0.01)
+    feature_select = ncfs.NCFS(reg=reg, eta=0.01)
     feature_select.fit(X, y)
     axes[i] = plot_features(
         feature_select.coef_, ax=axes[i], title="$\lambda = {}$".format(reg)
@@ -63,7 +63,7 @@ plt.clf()
 sigmas = [0.25, 0.5, 1, 1.5, 2]
 fig, axes = plt.subplots(1, 5, figsize=(12, 4))
 for i, sigma in enumerate(sigmas):
-    feature_select = NCFS.NCFS(sigma=sigma, eta=0.01)
+    feature_select = ncfs.NCFS(sigma=sigma, eta=0.01)
     feature_select.fit(X, y)
     axes[i] = plot_features(
         feature_select.coef_, ax=axes[i], title="$\sigma = {}$".format(sigma)
