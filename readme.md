@@ -44,11 +44,10 @@ The main `NCFS` class extends base `Estimator` and `Transformer` classes from
 
 The original paper uses the Manhattan distance when calculating distances
 between samples/features. While this implementation defaults to using this
-distance, weights comparable with published results were only found using the
-euclidean distance. However, while exact weights differed between distance
-metrics, the selected features did not. Unfortunately, the original paper
-did not link to the code used, and I've been unable to find a public
-implementation of the aglorithm.
+metric, the exact weights differed between reported values. However, the
+*selected* features did not. Unfortunately, the original paper did not link to
+the code used, and I've been unable to find a public implementation of the
+aglorithm.
 
 ### Numerical stability
 
