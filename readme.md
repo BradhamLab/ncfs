@@ -14,10 +14,10 @@ The package can be with pip using the following command:
 ## Example
 
 ```python
-from NCFS import NCFS
+from ncfs import NCFS, toy_dataset
 
-X, y = NCFS.toy_dataset()
-feature_select = NCFS.NCFS()
+X, y = toy_dataset()
+feature_select = NCFS()
 feature_select.fit(X, y)
 print(sum(feature_select.coef_ > 1))
 ```
