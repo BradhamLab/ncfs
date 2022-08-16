@@ -14,23 +14,31 @@ The package can be with pip using the following command:
 ## Example
 
 ```python
-from NCFS import NCFS
+from ncfs import NCFS, toy_dataset
 
-X, y = NCFS.toy_dataset()
-feature_select = NCFS.NCFS()
+X, y = toy_dataset()
+feature_select = NCFS()
 feature_select.fit(X, y)
 print(sum(feature_select.coef_ > 1))
 ```
 
 ## Tests
 
-To compare results to the original paper run the following command
+Unit tests for distances can be run with the following command:
+
+`tests/test_distances.py`
+
+To generate plots comparing results from the original publicaation, run:
+
 `python tests/generate_results.py`
 
-To perform unit tests ensuring accurate distance calculations, run:
-`python tests/test_distances.py`
+## Integration with Scikit-Learn
 
-## Comparison with Original Results
+The main `NCFS` class extends base `Estimator` and `Transformer` classes from
+`scikit-learn`, and thus can take advantage of the supporting functions in the
+`scikit-learn` library.
+
+## Comparison with Original Paper
 
 ### Distance metric
 
